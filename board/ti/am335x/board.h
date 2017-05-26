@@ -26,27 +26,27 @@
 
 static inline int board_is_bone(void)
 {
-	return board_ti_is("A335BONE");
+	return 0;
 }
 
 static inline int board_is_bone_lt(void)
 {
-	return board_ti_is("A335BNLT");
+	return 1;
 }
 
 static inline int board_is_bbg1(void)
 {
-	return board_is_bone_lt() && !strncmp(board_ti_get_rev(), "BBG1", 4);
+	return 0;
 }
 
 static inline int board_is_evm_sk(void)
 {
-	return board_ti_is("A335X_SK");
+	return 0;
 }
 
 static inline int board_is_idk(void)
 {
-	return !strncmp(board_ti_get_config(), "SKU#02", 6);
+	return 0;
 }
 
 static inline int board_is_gp_evm(void)
@@ -56,13 +56,12 @@ static inline int board_is_gp_evm(void)
 
 static inline int board_is_evm_15_or_later(void)
 {
-	return (board_is_gp_evm() &&
-		strncmp("1.5", board_ti_get_rev(), 3) <= 0);
+	return 0;
 }
 
 static inline int board_is_icev2(void)
 {
-	return board_ti_is("A335_ICE") && !strncmp("2", board_ti_get_rev(), 1);
+	return 0;
 }
 
 /*

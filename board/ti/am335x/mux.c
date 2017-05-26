@@ -140,6 +140,16 @@ static struct module_pin_mux gpio0_18_pin_mux[] = {
 	{-1},
 };
 
+static struct module_pin_mux gpio1_18_pin_mux[] = {
+       {OFFSET(gpmc_a2), (MODE(7) | PULLUP_EN)},                /* GPIO1_18 */
+       {-1},
+};
+
+static struct module_pin_mux gpio2_4_pin_mux[] = {
+       {OFFSET(gpmc_wen), (MODE(0) | PULLUP_EN)},               /* GPIO2_4 */
+       {-1},
+};
+
 static struct module_pin_mux rgmii1_pin_mux[] = {
 	{OFFSET(mii1_txen), MODE(2)},			/* RGMII1_TCTL */
 	{OFFSET(mii1_rxdv), MODE(2) | RXACTIVE},	/* RGMII1_RCTL */
@@ -383,6 +393,9 @@ void enable_board_pin_mux(void)
 		/* Beaglebone LT pinmux */
 		configure_module_pin_mux(mii1_pin_mux);
 		configure_module_pin_mux(mmc0_pin_mux);
+                /*enable LCD Backlight and LED on*/
+		configure_module_pin_mux(gpio1_18_pin_mux);
+		configure_module_pin_mux(gpio2_4_pin_mux);
 #if defined(CONFIG_NAND) && defined(CONFIG_EMMC_BOOT)
 		configure_module_pin_mux(nand_pin_mux);
 #elif defined(CONFIG_NOR) && defined(CONFIG_EMMC_BOOT)
