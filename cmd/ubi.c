@@ -289,6 +289,54 @@ static int ubi_rename_vol(char *oldname, char *newname)
 	return ubi_rename_volumes(ubi, &list);
 }
 
+static int ubi_swap_vol(char *volume_a, char *volume_b)
+{
+	struct ubi_volume *vol_a, *vol_b;
+	struct ubi_rename_entry a, b;
+	struct ubi_volume_desc desc_a, desc_b;
+	struct list_head list;
+
+	vol_a = ubi_find_volume(volume_a);
+	if (!vol_a) {
+		printf("%s: volume %s doesn't exist\n", __func__, volume_a);
+		return ENODEV;
+	}
+
+	vol_b = ubi_find_volume(volume_b);
+	if (!vol_b) {
+		printf("%s: volume %s doesn't exist\n", __func__, volume_a);
+		return ENODEV;
+	}
+
+	printf("Swap UBI volumes: %s - %s\n", volume_a, volume_b);
+
+	if (ubi->ro_mode) {
+		printf("%s: ubi device is in read-only mode\n", __func__);
+		return EROFS;
+	}
+
+	a.new_name_len = strlen(volume_a);
+	strcpy(a.new_name, volume_a);
+	a.remove = 0;
+	desc_a.vol = vol_b;
+	desc_a.mode = 0;
+	a.desc = &desc_a;
+
+	b.new_name_len = strlen(volume_b);
+	strcpy(b.new_name, volume_b);
+	b.remove = 0;
+	desc_b.vol = vol_a;
+	desc_b.mode = 0;
+	b.desc = &desc_b;
+
+	INIT_LIST_HEAD(&a.list);
+	INIT_LIST_HEAD(&b.list);
+	INIT_LIST_HEAD(&list);
+	list_add(&a.list, &list);
+	list_add(&b.list, &list);
+	return ubi_rename_volumes(ubi, &list);
+}
+
 static int ubi_volume_continue_write(char *volume, void *buf, size_t size)
 {
 	int err = 1;
@@ -645,6 +693,9 @@ static int do_ubi(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 	if (IS_ENABLED(CONFIG_CMD_UBI_RENAME) && !strncmp(argv[1], "rename", 6))
 		return ubi_rename_vol(argv[2], argv[3]);
 
+	if (IS_ENABLED(CONFIG_CMD_UBI_SWAPVOL) && !strncmp(argv[1], "swap", 4))
+		return ubi_swap_vol(argv[2], argv[3]);
+
 	if (strncmp(argv[1], "skipcheck", 9) == 0) {
 		/* E.g., change skip_check flag */
 		if (argc == 4) {
@@ -735,6 +786,9 @@ U_BOOT_CMD(
 		" - Remove volume\n"
 #if IS_ENABLED(CONFIG_CMD_UBI_RENAME)
 	"ubi rename oldname newname\n"
+#endif
+#if IS_ENABLED(CONFIG_CMD_UBI_SWAPVOL)
+	"ubi swap volume_a volume_b\n"
 #endif
 	"ubi skipcheck volume on/off - Set or clear skip_check flag in volume header\n"
 	"[Legends]\n"

@@ -2373,6 +2373,14 @@ config CMD_UBI_RENAME
          Enable a "ubi" command to rename ubi volume:
 	   ubi rename <oldname> <newname>
 
+config CMD_UBI_SWAPVOL
+       bool "Enable swap volumes"
+       depends on CMD_UBI
+       default n
+       help
+         Enable a "ubi" command to swap ubi volumes:
+	   ubi swap <volume_a> <volume_b>
+
 config CMD_UBIFS
 	tristate "Enable UBIFS - Unsorted block images filesystem commands"
 	depends on CMD_UBI
