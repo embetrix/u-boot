@@ -167,7 +167,7 @@ config CMD_TLV_EEPROM
 config SPL_CMD_TLV_EEPROM
 	bool "tlv_eeprom for SPL"
 	depends on SPL_I2C_EEPROM
-	select SPL_DRIVERS_MISC_SUPPORT
+	select SPL_DRIVERS_MISC
 	help
 	  Read system EEPROM data block in ONIE Tlvinfo format from SPL.
 
@@ -1322,7 +1322,7 @@ config CMD_UNIVERSE
 
 config CMD_USB
 	bool "usb"
-	depends on USB
+	depends on USB_HOST
 	select HAVE_BLOCK_DEVICE
 	help
 	  USB support.
@@ -1413,6 +1413,14 @@ config CMD_SETEXPR
 	    variable.
 	  Also supports loading the value at a memory location into a variable.
 	  If CONFIG_REGEX is enabled, setexpr also supports a gsub function.
+
+config CMD_SETEXPR_FMT
+	bool "setexpr_fmt"
+	default n
+	depends on CMD_SETEXPR
+	help
+	  Evaluate format string expression and store result in an environment
+	    variable.
 
 endmenu
 

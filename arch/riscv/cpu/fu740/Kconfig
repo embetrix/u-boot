@@ -19,6 +19,8 @@ config SIFIVE_FU740
 	imply SMP
 	imply CLK_SIFIVE
 	imply CLK_SIFIVE_PRCI
+	imply SIFIVE_CACHE
+	imply SIFIVE_CCACHE
 	imply SIFIVE_SERIAL
 	imply MACB
 	imply MII
@@ -37,4 +39,4 @@ config SIFIVE_FU740
 	imply PWM_SIFIVE
 	imply DM_I2C
 	imply SYS_I2C_OCORES
-	imply SPL_I2C_SUPPORT
+	imply SPL_I2C

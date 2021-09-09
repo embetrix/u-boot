@@ -366,6 +366,7 @@ int sdhci_set_clock(struct mmc *mmc, unsigned int clock)
 {
 	struct sdhci_host *host = mmc->priv;
 	unsigned int div, clk = 0, timeout;
+	int ret;
 
 	/* Wait max 20 ms */
 	timeout = 200;
@@ -386,8 +387,13 @@ int sdhci_set_clock(struct mmc *mmc, unsigned int clock)
 	if (clock == 0)
 		return 0;
 
-	if (host->ops && host->ops->set_delay)
-		host->ops->set_delay(host);
+	if (host->ops && host->ops->set_delay) {
+		ret = host->ops->set_delay(host);
+		if (ret) {
+			printf("%s: Error while setting tap delay\n", __func__);
+			return ret;
+		}
+	}
 
 	if (SDHCI_GET_VERSION(host) >= SDHCI_SPEC_300) {
 		/*
@@ -506,6 +512,9 @@ void sdhci_set_uhs_timing(struct sdhci_host *host)
 	case UHS_SDR104:
 	case MMC_HS_200:
 		reg |= SDHCI_CTRL_UHS_SDR104;
+		break;
+	case MMC_HS_400:
+		reg |= SDHCI_CTRL_HS400;
 		break;
 	default:
 		reg |= SDHCI_CTRL_UHS_SDR12;

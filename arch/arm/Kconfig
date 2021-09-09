@@ -661,6 +661,7 @@ config ARCH_EXYNOS
 	select DM
 	select DM_GPIO
 	select DM_I2C
+	select DM_ETH
 	select DM_KEYBOARD
 	select DM_SERIAL
 	select DM_SPI
@@ -798,6 +799,15 @@ config ARCH_IMX8M
 	select SYS_FSL_SEC_LE
 	select DM
 	select SUPPORT_SPL
+	imply CMD_DM
+
+config ARCH_IMX8ULP
+	bool "NXP i.MX8ULP platform"
+	select ARM64
+	select DM
+	select OF_CONTROL
+	select SUPPORT_SPL
+	select GPIO_EXTRA_HEADER
 	imply CMD_DM
 
 config ARCH_IMXRT
@@ -954,7 +964,7 @@ config ARCH_SOCFPGA
 	select SPL_SEPARATE_BSS if TARGET_SOCFPGA_SOC64
 	select SPL_SERIAL_SUPPORT
 	select SPL_SYSRESET
-	select SPL_WATCHDOG_SUPPORT
+	select SPL_WATCHDOG
 	select SUPPORT_SPL
 	select SYS_NS16550
 	select SYS_THUMB_BUILD if TARGET_SOCFPGA_GEN5 || TARGET_SOCFPGA_ARRIA10
@@ -984,7 +994,7 @@ config ARCH_SUNXI
 	select BINMAN
 	select CMD_GPIO
 	select CMD_MMC if MMC
-	select CMD_USB if DISTRO_DEFAULTS
+	select CMD_USB if DISTRO_DEFAULTS && USB_HOST
 	select CLK
 	select DM
 	select DM_ETH
@@ -993,7 +1003,6 @@ config ARCH_SUNXI
 	select DM_MMC if MMC
 	select DM_SCSI if SCSI
 	select DM_SERIAL
-	select DM_USB if DISTRO_DEFAULTS
 	select GPIO_EXTRA_HEADER
 	select OF_BOARD_SETUP
 	select OF_CONTROL
@@ -1006,8 +1015,8 @@ config ARCH_SUNXI
 	select SYS_NS16550
 	select SYS_THUMB_BUILD if !ARM64
 	select USB if DISTRO_DEFAULTS
-	select USB_KEYBOARD if DISTRO_DEFAULTS
-	select USB_STORAGE if DISTRO_DEFAULTS
+	select USB_KEYBOARD if DISTRO_DEFAULTS && USB_HOST
+	select USB_STORAGE if DISTRO_DEFAULTS && USB_HOST
 	select SPL_USE_TINY_PRINTF
 	select USE_PREBOOT
 	select SYS_RELOC_GD_ENV_ADDR
@@ -1020,11 +1029,11 @@ config ARCH_SUNXI
 	imply FIT
 	imply OF_LIBFDT_OVERLAY
 	imply PRE_CONSOLE_BUFFER
-	imply SPL_GPIO_SUPPORT
+	imply SPL_GPIO
 	imply SPL_LIBCOMMON_SUPPORT
 	imply SPL_LIBGENERIC_SUPPORT
 	imply SPL_MMC_SUPPORT if MMC
-	imply SPL_POWER_SUPPORT
+	imply SPL_POWER
 	imply SPL_SERIAL_SUPPORT
 	imply USB_GADGET
 
@@ -1035,7 +1044,6 @@ config ARCH_U8500
 	select DM_GPIO
 	select DM_MMC if MMC
 	select DM_SERIAL
-	select DM_USB if USB
 	select OF_CONTROL
 	select SYSRESET
 	select TIMER
@@ -1056,6 +1064,7 @@ config ARCH_VERSAL
 	select DM_SERIAL
 	select GPIO_EXTRA_HEADER
 	select OF_CONTROL
+	select SOC_DEVICE
 	imply BOARD_LATE_INIT
 	imply ENV_VARS_UBOOT_RUNTIME_CONFIG
 
@@ -1078,7 +1087,6 @@ config ARCH_ZYNQ
 	select DM_SERIAL
 	select DM_SPI
 	select DM_SPI_FLASH
-	select DM_USB if USB
 	select GPIO_EXTRA_HEADER
 	select OF_CONTROL
 	select SPI
@@ -1122,7 +1130,6 @@ config ARCH_ZYNQMP
 	select DM_SERIAL
 	select DM_SPI if SPI
 	select DM_SPI_FLASH if DM_SPI
-	select DM_USB if USB
 	select FIRMWARE
 	select GPIO_EXTRA_HEADER
 	select OF_CONTROL
@@ -1136,6 +1143,7 @@ config ARCH_ZYNQMP
 	select SPL_SEPARATE_BSS if SPL
 	select SUPPORT_SPL
 	select ZYNQMP_IPI
+	select SOC_DEVICE
 	imply BOARD_LATE_INIT
 	imply CMD_DM
 	imply ENV_VARS_UBOOT_RUNTIME_CONFIG
@@ -1177,7 +1185,6 @@ config TARGET_VEXPRESS64_JUNO
 	select DM_ETH
 	select BLK
 	select USB
-	select DM_USB
 
 config TARGET_TOTAL_COMPUTE
 	bool "Support Total Compute Platform"
@@ -1343,7 +1350,6 @@ config TARGET_POPLAR
 	select ARM64
 	select DM
 	select DM_SERIAL
-	select DM_USB
 	select GPIO_EXTRA_HEADER
 	select OF_CONTROL
 	select PL01X_SERIAL
@@ -1681,7 +1687,6 @@ config TARGET_SL28
 	select DM_SCSI
 	select DM_SERIAL
 	select DM_SPI
-	select DM_USB
 	select GPIO_EXTRA_HEADER
 	select SPL_DM if SPL
 	select SPL_DM_SPI if SPL
@@ -1708,7 +1713,6 @@ config ARCH_UNIPHIER
 	select DM_MTD
 	select DM_RESET
 	select DM_SERIAL
-	select DM_USB
 	select OF_BOARD_SETUP
 	select OF_CONTROL
 	select OF_LIBFDT
@@ -1799,7 +1803,7 @@ config ARCH_STM32MP
 config ARCH_ROCKCHIP
 	bool "Support Rockchip SoCs"
 	select BLK
-	select BINMAN if SPL_OPTEE
+	select BINMAN if SPL_OPTEE || (SPL && !ARM64)
 	select DM
 	select DM_GPIO
 	select DM_I2C
@@ -1809,7 +1813,6 @@ config ARCH_ROCKCHIP
 	select DM_SERIAL
 	select DM_SPI
 	select DM_SPI_FLASH
-	select DM_USB if USB
 	select ENABLE_ARM_SOC_BOOT0_HOOK
 	select OF_CONTROL
 	select SPI
@@ -1978,6 +1981,8 @@ source "arch/arm/mach-imx/mx7ulp/Kconfig"
 source "arch/arm/mach-imx/imx8/Kconfig"
 
 source "arch/arm/mach-imx/imx8m/Kconfig"
+
+source "arch/arm/mach-imx/imx8ulp/Kconfig"
 
 source "arch/arm/mach-imx/imxrt/Kconfig"
 

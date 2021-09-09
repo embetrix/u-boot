@@ -27,6 +27,7 @@ obj-$(CONFIG_AXI) += axi.o
 obj-$(CONFIG_BLK) += blk.o
 obj-$(CONFIG_BUTTON) += button.o
 obj-$(CONFIG_DM_BOOTCOUNT) += bootcount.o
+obj-$(CONFIG_DM_REBOOT_MODE) += reboot-mode.o
 obj-$(CONFIG_CLK) += clk.o clk_ccf.o
 obj-$(CONFIG_CPU) += cpu.o
 obj-$(CONFIG_CROS_EC) += cros_ec.o
@@ -35,6 +36,7 @@ obj-$(CONFIG_DEVRES) += devres.o
 obj-$(CONFIG_DMA) += dma.o
 obj-$(CONFIG_VIDEO_MIPI_DSI) += dsi_host.o
 obj-$(CONFIG_DM_DSA) += dsa.o
+obj-$(CONFIG_ECDSA_VERIFY) += ecdsa.o
 obj-$(CONFIG_DM_ETH) += eth.o
 ifneq ($(CONFIG_EFI_PARTITION),)
 obj-$(CONFIG_FASTBOOT_FLASH_MMC) += fastboot.o

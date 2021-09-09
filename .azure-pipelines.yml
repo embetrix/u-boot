@@ -2,7 +2,7 @@ variables:
   windows_vm: vs2017-win2016
   ubuntu_vm: ubuntu-18.04
   macos_vm: macOS-10.15
-  ci_runner_image: trini/u-boot-gitlab-ci-runner:focal-20210609-06Jul2021
+  ci_runner_image: trini/u-boot-gitlab-ci-runner:focal-20210723-04Aug2021
   # Add '-u 0' options for Azure pipelines, otherwise we get "permission
   # denied" error when it tries to "useradd -m -u 1001 vsts_azpcontainer",
   # since our $(ci_runner_image) user is not root.
@@ -183,7 +183,7 @@ jobs:
           TEST_PY_BD: "sandbox"
         sandbox_clang:
           TEST_PY_BD: "sandbox"
-          OVERRIDE: "-O clang-10"
+          OVERRIDE: "-O clang-12"
         sandbox_spl:
           TEST_PY_BD: "sandbox_spl"
           TEST_PY_TEST_SPEC: "test_ofplatdata or test_handoff or test_spl"
@@ -374,6 +374,8 @@ jobs:
           BUILDMAN: "mx6 -x boundary,engicam,freescale,technexion,toradex"
         imx:
           BUILDMAN: "mx -x mx6,freescale,technexion,toradex"
+        imx8:
+          BUILDMAN: "imx8"
         keystone2_keystone3:
           BUILDMAN: "k2 k3"
         samsung_socfpga:
@@ -411,11 +413,11 @@ jobs:
         non_fsl_ppc:
           BUILDMAN: "powerpc -x freescale"
         mpc85xx_freescale:
-          BUILDMAN: "mpc85xx&freescale -x t208xrdb -x t4qds -x t102* -x p1_p2_rdb_pc -x p1010rdb -x corenet_ds -x b4860qds -x bsc91*"
+          BUILDMAN: "mpc85xx&freescale -x t208xrdb -x t102* -x p1_p2_rdb_pc -x p1010rdb -x corenet_ds -x bsc91*"
         t208xrdb_corenet_ds:
           BUILDMAN: "t208xrdb corenet_ds"
         fsl_ppc:
-          BUILDMAN: "t4qds b4860qds mpc83xx&freescale"
+          BUILDMAN: "mpc83xx&freescale"
         t102x:
           BUILDMAN: "t102*"
         p1_p2_rdb_pc:
@@ -433,7 +435,7 @@ jobs:
         uniphier:
           BUILDMAN: "uniphier"
         aarch64_catch_all:
-          BUILDMAN: "aarch64 -x bcm,k3,tegra,ls1,ls2,lx216,mvebu,uniphier,renesas,sunxi,samsung,socfpga,rk,versal,zynq"
+          BUILDMAN: "aarch64 -x bcm,imx8,k3,tegra,ls1,ls2,lx216,mvebu,uniphier,renesas,sunxi,samsung,socfpga,rk,versal,zynq"
         rockchip:
           BUILDMAN: "rk"
         renesas:

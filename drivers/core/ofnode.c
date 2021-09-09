@@ -18,6 +18,19 @@
 #include <linux/ioport.h>
 #include <asm/global_data.h>
 
+bool ofnode_name_eq(ofnode node, const char *name)
+{
+	const char *node_name;
+	size_t len;
+
+	assert(ofnode_valid(node));
+
+	node_name = ofnode_get_name(node);
+	len = strchrnul(node_name, '@') - node_name;
+
+	return (strlen(name) == len) && !strncmp(node_name, name, len);
+}
+
 int ofnode_read_u32(ofnode node, const char *propname, u32 *outp)
 {
 	return ofnode_read_u32_index(node, propname, 0, outp);
@@ -329,7 +342,8 @@ static fdt_addr_t __ofnode_get_addr_size_index(ofnode node, int index,
 {
 	int na, ns;
 
-	*size = FDT_SIZE_T_NONE;
+	if (size)
+		*size = FDT_SIZE_T_NONE;
 
 	if (ofnode_is_np(node)) {
 		const __be32 *prop_val;
@@ -340,6 +354,7 @@ static fdt_addr_t __ofnode_get_addr_size_index(ofnode node, int index,
 					  &flags);
 		if (!prop_val)
 			return FDT_ADDR_T_NONE;
+
 		if (size)
 			*size = size64;
 
@@ -359,8 +374,6 @@ static fdt_addr_t __ofnode_get_addr_size_index(ofnode node, int index,
 						  index, na, ns, size,
 						  translate);
 	}
-
-	return FDT_ADDR_T_NONE;
 }
 
 fdt_addr_t ofnode_get_addr_size_index(ofnode node, int index, fdt_size_t *size)

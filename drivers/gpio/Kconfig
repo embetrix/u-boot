@@ -16,7 +16,7 @@ config DM_GPIO
 
 config SPL_DM_GPIO
 	bool "Enable Driver Model for GPIO drivers in SPL"
-	depends on DM_GPIO && SPL_DM && SPL_GPIO_SUPPORT
+	depends on DM_GPIO && SPL_DM && SPL_GPIO
 	default y
 	help
 	  Enable driver model for GPIO access in SPL. The standard GPIO
@@ -27,7 +27,7 @@ config SPL_DM_GPIO
 
 config TPL_DM_GPIO
 	bool "Enable Driver Model for GPIO drivers in TPL"
-	depends on DM_GPIO && TPL_DM && TPL_GPIO_SUPPORT
+	depends on DM_GPIO && TPL_DM && TPL_GPIO
 	default y
 	help
 	  Enable driver model for GPIO access in TPL. The standard GPIO
@@ -58,7 +58,7 @@ config DM_GPIO_LOOKUP_LABEL
 
 config SPL_DM_GPIO_LOOKUP_LABEL
 	bool "Enable searching for gpio labelnames"
-	depends on DM_GPIO && SPL_DM && SPL_GPIO_SUPPORT
+	depends on DM_GPIO && SPL_DM && SPL_GPIO
 	help
 	  This option enables searching for gpio names in
 	  the defined gpio labels, if the search for the
@@ -178,6 +178,16 @@ config LPC32XX_GPIO
 	default n
 	help
 	  Support for the LPC32XX GPIO driver.
+
+config MCP230XX_GPIO
+	bool "MCP230XX GPIO driver"
+	depends on DM
+	help
+	  Support for Microchip's MCP230XX I2C connected GPIO devices.
+	  The following chips are supported:
+	   - MCP23008
+	   - MCP23017
+	   - MCP23018
 
 config MSCC_SGPIO
 	bool "Microsemi Serial GPIO driver"
@@ -494,5 +504,13 @@ config NX_GPIO
 	  a number of banks (different for each SoC type) each with 32 GPIOs.
 	  The GPIOs for a device are defined in the device tree with one node
 	  for each bank.
+
+config NOMADIK_GPIO
+	bool "Nomadik GPIO driver"
+	depends on DM_GPIO
+	help
+	  Support GPIO access on ST-Ericsson Ux500 SoCs. The GPIOs are arranged
+	  into a number of banks each with 32 GPIOs. The GPIOs for a device are
+	  defined in the device tree with one node for each bank.
 
 endmenu

@@ -206,6 +206,7 @@ config DWC_ETH_QOS_IMX
 config DWC_ETH_QOS_STM32
 	bool "Synopsys DWC Ethernet QOS device support for STM32"
 	depends on DWC_ETH_QOS
+	select DM_ETH_PHY
 	default y if ARCH_STM32MP
 	help
 	  The Synopsys Designware Ethernet QOS IP block with the specific
@@ -330,7 +331,7 @@ config FEC_MXC_MDIO_BASE
 
 config FEC_MXC
 	bool "FEC Ethernet controller"
-	depends on MX28 || MX5 || MX6 || MX7 || IMX8 || IMX8M || VF610
+	depends on MX28 || MX5 || MX6 || MX7 || IMX8 || IMX8M || IMX8ULP || VF610
 	help
 	  This driver supports the 10/100 Fast Ethernet controller for
 	  NXP i.MX processors.
@@ -401,6 +402,13 @@ config KS8851_MLL_BASEADDR
 	  Define this to hold the physical address of the device (I/O space)
 endif #DM_ETH
 endif #KS8851_MLL
+
+config KSZ9477
+	bool "Microchip KSZ9477 I2C controller driver"
+	depends on DM_DSA && DM_I2C
+	help
+	  This driver implements a DSA switch driver for the KSZ9477 family
+	  of GbE switches using the I2C interface.
 
 config MVGBE
 	bool "Marvell Orion5x/Kirkwood network interface support"
@@ -609,6 +617,15 @@ config XILINX_AXIEMAC
 	bool "Xilinx AXI Ethernet"
 	help
 	  This MAC is present in Xilinx Microblaze, Zynq and ZynqMP SoCs.
+
+config XILINX_AXIMRMAC
+	depends on DM_ETH && ARCH_VERSAL
+	bool "Xilinx AXI MRMAC"
+	help
+	  MRMAC is a high performance, low latency, adaptable Ethernet
+	  integrated hard IP. This can be configured up to four ports with MAC
+	  rates from 10GE to 100GE. This could be present in some of the Xilinx
+	  Versal designs.
 
 config XILINX_EMACLITE
 	depends on DM_ETH
