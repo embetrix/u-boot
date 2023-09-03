@@ -6,9 +6,12 @@
 #include <common.h>
 #include <cpu.h>
 #include <dm.h>
+#include <dm/lists.h>
+#include <event.h>
 #include <init.h>
 #include <log.h>
 #include <asm/encoding.h>
+#include <asm/system.h>
 #include <dm/uclass-internal.h>
 #include <linux/bitops.h>
 
@@ -16,24 +19,26 @@
  * The variables here must be stored in the data section since they are used
  * before the bss section is available.
  */
-#ifdef CONFIG_OF_PRIOR_STAGE
-phys_addr_t prior_stage_fdt_address __section(".data");
-#endif
-#ifndef CONFIG_XIP
+#if !CONFIG_IS_ENABLED(XIP)
 u32 hart_lottery __section(".data") = 0;
 
+#ifdef CONFIG_AVAILABLE_HARTS
 /*
  * The main hart running U-Boot has acquired available_harts_lock until it has
  * finished initialization of global data.
  */
 u32 available_harts_lock = 1;
 #endif
+#endif
 
 static inline bool supports_extension(char ext)
 {
-#ifdef CONFIG_CPU
+#if CONFIG_IS_ENABLED(RISCV_MMODE)
+	return csr_read(CSR_MISA) & (1 << (ext - 'a'));
+#elif CONFIG_CPU
 	struct udevice *dev;
 	char desc[32];
+	int i;
 
 	uclass_find_first_device(UCLASS_CPU, &dev);
 	if (!dev) {
@@ -41,24 +46,27 @@ static inline bool supports_extension(char ext)
 		return false;
 	}
 	if (!cpu_get_desc(dev, desc, sizeof(desc))) {
-		/* skip the first 4 characters (rv32|rv64) */
-		if (strchr(desc + 4, ext))
-			return true;
+		/*
+		 * skip the first 4 characters (rv32|rv64) and
+		 * check until underscore
+		 */
+		for (i = 4; i < sizeof(desc); i++) {
+			if (desc[i] == '_' || desc[i] == '\0')
+				break;
+			if (desc[i] == ext)
+				return true;
+		}
 	}
 
 	return false;
 #else  /* !CONFIG_CPU */
-#if CONFIG_IS_ENABLED(RISCV_MMODE)
-	return csr_read(CSR_MISA) & (1 << (ext - 'a'));
-#else  /* !CONFIG_IS_ENABLED(RISCV_MMODE) */
 #warning "There is no way to determine the available extensions in S-mode."
 #warning "Please convert your board to use the RISC-V CPU driver."
 	return false;
-#endif /* CONFIG_IS_ENABLED(RISCV_MMODE) */
 #endif /* CONFIG_CPU */
 }
 
-static int riscv_cpu_probe(void)
+static int riscv_cpu_probe(void *ctx, struct event *event)
 {
 #ifdef CONFIG_CPU
 	int ret;
@@ -71,6 +79,7 @@ static int riscv_cpu_probe(void)
 
 	return 0;
 }
+EVENT_SPY(EVT_DM_POST_INIT_R, riscv_cpu_probe);
 
 /*
  * This is called on secondary harts just after the IPI is init'd. Currently
@@ -83,11 +92,11 @@ static void dummy_pending_ipi_clear(ulong hart, ulong arg0, ulong arg1)
 }
 #endif
 
-int arch_cpu_init_dm(void)
+int riscv_cpu_setup(void *ctx, struct event *event)
 {
 	int ret;
 
-	ret = riscv_cpu_probe();
+	ret = riscv_cpu_probe(ctx, event);
 	if (ret)
 		return ret;
 
@@ -102,12 +111,14 @@ int arch_cpu_init_dm(void)
 		 * Enable perf counters for cycle, time,
 		 * and instret counters only
 		 */
+		if (supports_extension('u')) {
 #ifdef CONFIG_RISCV_PRIV_1_9
-		csr_write(CSR_MSCOUNTEREN, GENMASK(2, 0));
-		csr_write(CSR_MUCOUNTEREN, GENMASK(2, 0));
+			csr_write(CSR_MSCOUNTEREN, GENMASK(2, 0));
+			csr_write(CSR_MUCOUNTEREN, GENMASK(2, 0));
 #else
-		csr_write(CSR_MCOUNTEREN, GENMASK(2, 0));
+			csr_write(CSR_MCOUNTEREN, GENMASK(2, 0));
 #endif
+		}
 
 		/* Disable paging */
 		if (supports_extension('s'))
@@ -135,10 +146,15 @@ int arch_cpu_init_dm(void)
 
 	return 0;
 }
+EVENT_SPY(EVT_DM_POST_INIT_F, riscv_cpu_setup);
 
 int arch_early_init_r(void)
 {
-	return riscv_cpu_probe();
+	if (IS_ENABLED(CONFIG_SYSRESET_SBI))
+		device_bind_driver(gd->dm_root, "sbi-sysreset",
+				   "sbi-sysreset", NULL);
+
+	return 0;
 }
 
 /**

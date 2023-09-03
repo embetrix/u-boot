@@ -12,18 +12,18 @@ import unittest
 from dtoc import fdt
 from dtoc import fdt_util
 from dtoc.fdt import FdtScan
-from patman import tools
+from u_boot_pylib import tools
 
 class TestFdt(unittest.TestCase):
     @classmethod
     def setUpClass(self):
         self._binman_dir = os.path.dirname(os.path.realpath(sys.argv[0]))
         self._indir = tempfile.mkdtemp(prefix='binmant.')
-        tools.PrepareOutputDir(self._indir, True)
+        tools.prepare_output_dir(self._indir, True)
 
     @classmethod
     def tearDownClass(self):
-        tools._FinaliseForTest()
+        tools._finalise_for_test()
 
     def TestFile(self, fname):
         return os.path.join(self._binman_dir, 'test', fname)

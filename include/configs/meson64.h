@@ -11,13 +11,23 @@
 #if (defined(CONFIG_MESON_AXG) || defined(CONFIG_MESON_G12A))
 #define GICD_BASE			0xffc01000
 #define GICC_BASE			0xffc02000
+#elif defined(CONFIG_MESON_A1)
+#define GICD_BASE			0xff901000
+#define GICC_BASE			0xff902000
 #else /* MESON GXL and GXBB */
 #define GICD_BASE			0xc4301000
 #define GICC_BASE			0xc4302000
 #endif
 
+/* Serial drivers */
+/* The following table includes the supported baudrates */
+#define CFG_SYS_BAUDRATE_TABLE  \
+	{300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, \
+		230400, 250000, 460800, 500000, 1000000, 2000000, 4000000, \
+		8000000 }
+
 /* For splashscreen */
-#ifdef CONFIG_DM_VIDEO
+#ifdef CONFIG_VIDEO
 #define STDOUT_CFG "vidconsole,serial"
 #else
 #define STDOUT_CFG "serial"
@@ -29,18 +39,7 @@
 #define STDIN_CFG "serial"
 #endif
 
-#define CONFIG_CPU_ARMV8
-#define CONFIG_REMAKE_ELF
-#define CONFIG_SYS_MAXARGS		32
-#ifndef CONFIG_SYS_MALLOC_LEN
-#define CONFIG_SYS_MALLOC_LEN		(32 << 20)
-#endif
-#define CONFIG_SYS_CBSIZE		1024
-
-#define CONFIG_SYS_SDRAM_BASE		0
-#define CONFIG_SYS_INIT_SP_ADDR		0x20000000
-#define CONFIG_SYS_LOAD_ADDR		CONFIG_SYS_TEXT_BASE
-#define CONFIG_SYS_BOOTM_LEN		(64 << 20) /* 64 MiB */
+#define CFG_SYS_SDRAM_BASE		0
 
 /* ROM USB boot support, auto-execute boot.scr at scriptaddr */
 #define BOOTENV_DEV_ROMUSB(devtypeu, devtypel, instance) \
@@ -66,6 +65,12 @@
 	#define BOOT_TARGET_NVME(func)
 #endif
 
+#ifdef CONFIG_CMD_SCSI
+	#define BOOT_TARGET_SCSI(func) func(SCSI, scsi, 0)
+#else
+	#define BOOT_TARGET_SCSI(func)
+#endif
+
 #ifndef BOOT_TARGET_DEVICES
 #define BOOT_TARGET_DEVICES(func) \
 	func(ROMUSB, romusb, na)  \
@@ -74,14 +79,15 @@
 	func(MMC, mmc, 2) \
 	BOOT_TARGET_DEVICES_USB(func) \
 	BOOT_TARGET_NVME(func) \
+	BOOT_TARGET_SCSI(func) \
 	func(PXE, pxe, na) \
 	func(DHCP, dhcp, na)
 #endif
 
 #include <config_distro_bootcmd.h>
 
-#ifndef CONFIG_EXTRA_ENV_SETTINGS
-#define CONFIG_EXTRA_ENV_SETTINGS \
+#ifndef CFG_EXTRA_ENV_SETTINGS
+#define CFG_EXTRA_ENV_SETTINGS \
 	"stdin=" STDIN_CFG "\0" \
 	"stdout=" STDOUT_CFG "\0" \
 	"stderr=" STDOUT_CFG "\0" \

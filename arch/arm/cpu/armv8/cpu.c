@@ -48,18 +48,26 @@ int cleanup_before_linux(void)
 
 	disable_interrupts();
 
-	/*
-	 * Turn off I-cache and invalidate it
-	 */
-	icache_disable();
-	invalidate_icache_all();
+	if (IS_ENABLED(CONFIG_CMO_BY_VA_ONLY)) {
+		/*
+		 * Disable D-cache.
+		 */
+		dcache_disable();
+	} else {
+		/*
+		 * Turn off I-cache and invalidate it
+		 */
+		icache_disable();
+		invalidate_icache_all();
 
-	/*
-	 * turn off D-cache
-	 * dcache_disable() in turn flushes the d-cache and disables MMU
-	 */
-	dcache_disable();
-	invalidate_dcache_all();
+		/*
+		 * turn off D-cache
+		 * dcache_disable() in turn flushes the d-cache and disables
+		 * MMU
+		 */
+		dcache_disable();
+		invalidate_dcache_all();
+	}
 
 	return 0;
 }
@@ -79,6 +87,9 @@ static void relocate_secure_section(void)
 
 void armv8_setup_psci(void)
 {
+	if (current_el() != 3)
+		return;
+
 	relocate_secure_section();
 	secure_ram_addr(psci_setup_vectors)();
 	secure_ram_addr(psci_arch_init)();

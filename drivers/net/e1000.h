@@ -21,10 +21,6 @@
 #include <linux/list.h>
 #include <malloc.h>
 #include <net.h>
-/* Avoids a compile error since struct eth_device is not defined */
-#ifndef CONFIG_DM_ETH
-#include <netdev.h>
-#endif
 #include <asm/io.h>
 #include <pci.h>
 
@@ -249,7 +245,7 @@ struct e1000_phy_stats {
 #define E1000_ERR_MASTER_REQUESTS_PENDING	10
 #define E1000_ERR_HOST_INTERFACE_COMMAND	11
 #define E1000_BLK_PHY_RESET			12
-#define E1000_ERR_SWFW_SYNC 			13
+#define E1000_ERR_SWFW_SYNC			13
 
 /* PCI Device IDs */
 #define E1000_DEV_ID_82542	    0x1000
@@ -1077,19 +1073,12 @@ typedef enum {
 struct e1000_hw {
 	const char *name;
 	struct list_head list_node;
-#ifndef CONFIG_DM_ETH
-	struct eth_device *nic;
-#endif
 #ifdef CONFIG_E1000_SPI
 	struct spi_slave spi;
 #endif
 	unsigned int cardnum;
 
-#ifdef CONFIG_DM_ETH
 	struct udevice *pdev;
-#else
-	pci_dev_t pdev;
-#endif
 	uint8_t *hw_addr;
 	e1000_mac_type mac_type;
 	e1000_phy_type phy_type;

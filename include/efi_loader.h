@@ -10,6 +10,7 @@
 
 #include <common.h>
 #include <blk.h>
+#include <event.h>
 #include <log.h>
 #include <part_efi.h>
 #include <efi_api.h>
@@ -133,6 +134,10 @@ static inline efi_status_t efi_launch_capsules(void)
 #define U_BOOT_GUID \
 	EFI_GUID(0xe61d73b9, 0xa384, 0x4acc, \
 		 0xae, 0xab, 0x82, 0xe8, 0x28, 0xf3, 0x62, 0x8b)
+/* GUID used as root for blkmap devices */
+#define U_BOOT_BLKMAP_DEV_GUID \
+	EFI_GUID(0x4cad859d, 0xd644, 0x42ff,	\
+		 0x87, 0x0b, 0xc0, 0x2e, 0xac, 0x05, 0x58, 0x63)
 /* GUID used as host device on sandbox */
 #define U_BOOT_HOST_DEV_GUID \
 	EFI_GUID(0xbbe4e671, 0x5773, 0x4ea1, \
@@ -141,6 +146,11 @@ static inline efi_status_t efi_launch_capsules(void)
 #define U_BOOT_VIRTIO_DEV_GUID \
 	EFI_GUID(0x63293792, 0xadf5, 0x9325, \
 		 0xb9, 0x9f, 0x4e, 0x0e, 0x45, 0x5c, 0x1b, 0x1e)
+
+/* GUID for the auto generated boot menu entry */
+#define EFICONFIG_AUTO_GENERATED_ENTRY_GUID \
+	EFI_GUID(0x38c1acc1, 0x9fc0, 0x41f0, \
+		 0xb9, 0x01, 0xfa, 0x74, 0xd6, 0xd6, 0xe4, 0xde)
 
 /* Use internal device tree when starting UEFI application */
 #define EFI_FDT_USE_INTERNAL NULL
@@ -156,7 +166,7 @@ extern bool efi_st_keep_devices;
 
 /* EFI system partition */
 extern struct efi_system_partition {
-	enum if_type if_type;
+	enum uclass_id uclass_id;
 	int devnum;
 	u8 part;
 } efi_system_partition;
@@ -226,6 +236,9 @@ const char *__efi_nesting_dec(void);
 #define EFI_CACHELINE_SIZE 128
 #endif
 
+/* max bootmenu title size for volume selection */
+#define BOOTMENU_DEVICE_NAME_MAX 16
+
 /* Key identifying current memory map */
 extern efi_uintn_t efi_memory_map_key;
 
@@ -249,6 +262,9 @@ extern const struct efi_hii_string_protocol efi_hii_string;
 
 uint16_t *efi_dp_str(struct efi_device_path *dp);
 
+/* GUID for the auto generated boot menu entry */
+extern const efi_guid_t efi_guid_bootmenu_auto_generated;
+
 /* GUID of the U-Boot root node */
 extern const efi_guid_t efi_u_boot_guid;
 #ifdef CONFIG_SANDBOX
@@ -260,6 +276,8 @@ extern const efi_guid_t efi_block_io_guid;
 extern const efi_guid_t efi_global_variable_guid;
 extern const efi_guid_t efi_guid_console_control;
 extern const efi_guid_t efi_guid_device_path;
+/* GUID of the EFI system partition */
+extern const efi_guid_t efi_system_partition_guid;
 /* GUID of the EFI_DRIVER_BINDING_PROTOCOL */
 extern const efi_guid_t efi_guid_driver_binding_protocol;
 /* event group ExitBootServices() invoked */
@@ -298,6 +316,8 @@ extern const efi_guid_t efi_guid_image_security_database;
 extern const efi_guid_t efi_guid_sha256;
 extern const efi_guid_t efi_guid_cert_x509;
 extern const efi_guid_t efi_guid_cert_x509_sha256;
+extern const efi_guid_t efi_guid_cert_x509_sha384;
+extern const efi_guid_t efi_guid_cert_x509_sha512;
 extern const efi_guid_t efi_guid_cert_type_pkcs7;
 
 /* GUID of RNG protocol */
@@ -308,6 +328,11 @@ extern const efi_guid_t efi_guid_capsule_report;
 extern const efi_guid_t efi_guid_firmware_management_protocol;
 /* GUID for the ESRT */
 extern const efi_guid_t efi_esrt_guid;
+/* GUID of the SMBIOS table */
+extern const efi_guid_t smbios_guid;
+/*GUID of console */
+extern const efi_guid_t efi_guid_text_input_protocol;
+extern const efi_guid_t efi_guid_text_output_protocol;
 
 extern char __efi_runtime_start[], __efi_runtime_stop[];
 extern char __efi_runtime_rel_start[], __efi_runtime_rel_stop[];
@@ -340,7 +365,7 @@ struct efi_open_protocol_info_item {
  */
 struct efi_handler {
 	struct list_head link;
-	const efi_guid_t *guid;
+	const efi_guid_t guid;
 	void *protocol_interface;
 	struct list_head open_infos;
 };
@@ -369,6 +394,7 @@ enum efi_object_type {
  * @protocols:	linked list with the protocol interfaces installed on this
  *		handle
  * @type:	image type if the handle relates to an image
+ * @dev:	pointer to the DM device which is associated with this EFI handle
  *
  * UEFI offers a flexible and expandable object model. The objects in the UEFI
  * API are devices, drivers, and loaded images. struct efi_object is our storage
@@ -386,6 +412,7 @@ struct efi_object {
 	/* The list of protocols */
 	struct list_head protocols;
 	enum efi_object_type type;
+	struct udevice *dev;
 };
 
 enum efi_image_auth_status {
@@ -486,11 +513,23 @@ struct efi_register_notify_event {
 	struct list_head handles;
 };
 
-/* List of all events registered by RegisterProtocolNotify() */
-extern struct list_head efi_register_notify_events;
-
+/* called at pre-initialization */
+int efi_init_early(void);
 /* Initialize efi execution environment */
 efi_status_t efi_init_obj_list(void);
+/* Append new boot option in BootOrder variable */
+efi_status_t efi_bootmgr_append_bootorder(u16 index);
+/* Get unused "Boot####" index */
+efi_status_t efi_bootmgr_get_unused_bootoption(u16 *buf,
+					       efi_uintn_t buf_size, u32 *index);
+/* Generate the media device boot option */
+efi_status_t efi_bootmgr_update_media_device_boot_option(void);
+/* Delete selected boot option */
+efi_status_t efi_bootmgr_delete_boot_option(u16 boot_index);
+/* search the boot option index in BootOrder */
+bool efi_search_bootorder(u16 *bootorder, efi_uintn_t num, u32 target, u32 *index);
+/* Set up console modes */
+void efi_setup_console_size(void);
 /* Install device tree */
 efi_status_t efi_install_fdt(void *fdt);
 /* Run loaded UEFI image */
@@ -501,9 +540,11 @@ efi_status_t efi_init_variables(void);
 void efi_variables_boot_exit_notify(void);
 efi_status_t efi_tcg2_notify_exit_boot_services_failed(void);
 /* Measure efi application invocation */
-efi_status_t efi_tcg2_measure_efi_app_invocation(void);
+efi_status_t efi_tcg2_measure_efi_app_invocation(struct efi_loaded_image_obj *handle);
 /* Measure efi application exit */
 efi_status_t efi_tcg2_measure_efi_app_exit(void);
+/* Measure DTB */
+efi_status_t efi_tcg2_measure_dtb(void *dtb);
 /* Called by bootefi to initialize root node */
 efi_status_t efi_root_node_register(void);
 /* Called by bootefi to initialize runtime */
@@ -515,24 +556,28 @@ efi_status_t EFIAPI efi_convert_pointer(efi_uintn_t debug_disposition,
 					void **address);
 /* Carve out DT reserved memory ranges */
 void efi_carve_out_dt_rsv(void *fdt);
+/* Purge unused kaslr-seed */
+void efi_try_purge_kaslr_seed(void *fdt);
 /* Called by bootefi to make console interface available */
 efi_status_t efi_console_register(void);
-/* Called by bootefi to make all disk storage accessible as EFI objects */
-efi_status_t efi_disk_register(void);
+/* Called by efi_init_obj_list() to proble all block devices */
+efi_status_t efi_disks_register(void);
 /* Called by efi_init_obj_list() to install EFI_RNG_PROTOCOL */
 efi_status_t efi_rng_register(void);
 /* Called by efi_init_obj_list() to install EFI_TCG2_PROTOCOL */
 efi_status_t efi_tcg2_register(void);
+/* Called by efi_init_obj_list() to install RISCV_EFI_BOOT_PROTOCOL */
+efi_status_t efi_riscv_register(void);
+/* Called by efi_init_obj_list() to do initial measurement */
+efi_status_t efi_tcg2_do_initial_measurement(void);
 /* measure the pe-coff image, extend PCR and add Event Log */
 efi_status_t tcg2_measure_pe_image(void *efi, u64 efi_size,
 				   struct efi_loaded_image_obj *handle,
 				   struct efi_loaded_image *loaded_image_info);
 /* Create handles and protocols for the partitions of a block device */
 int efi_disk_create_partitions(efi_handle_t parent, struct blk_desc *desc,
-			       const char *if_typename, int diskid,
+			       const char *uclass_idname, int diskid,
 			       const char *pdevname);
-/* Check if it is EFI system partition */
-bool efi_disk_is_system_part(efi_handle_t handle);
 /* Called by bootefi to make GOP (graphical) interface available */
 efi_status_t efi_gop_register(void);
 /* Called by bootefi to make the network interface available */
@@ -540,14 +585,14 @@ efi_status_t efi_net_register(void);
 /* Called by bootefi to make the watchdog available */
 efi_status_t efi_watchdog_register(void);
 efi_status_t efi_initrd_register(void);
-void efi_initrd_deregister(void);
+efi_status_t efi_initrd_deregister(void);
 /* Called by bootefi to make SMBIOS tables available */
 /**
  * efi_acpi_register() - write out ACPI tables
  *
  * Called by bootefi to make ACPI tables available
  *
- * @return 0 if OK, -ENOMEM if no memory is available for the tables
+ * Return: 0 if OK, -ENOMEM if no memory is available for the tables
  */
 efi_status_t efi_acpi_register(void);
 /**
@@ -555,7 +600,7 @@ efi_status_t efi_acpi_register(void);
  *
  * Called by bootefi to make SMBIOS tables available
  *
- * @return 0 if OK, -ENOMEM if no memory is available for the tables
+ * Return: 0 if OK, -ENOMEM if no memory is available for the tables
  */
 efi_status_t efi_smbios_register(void);
 
@@ -577,14 +622,20 @@ efi_status_t efi_load_pe(struct efi_loaded_image_obj *handle,
 void efi_save_gd(void);
 /* Call this to relocate the runtime section to an address space */
 void efi_runtime_relocate(ulong offset, struct efi_mem_desc *map);
+/* Call this to get image parameters */
+void efi_get_image_parameters(void **img_addr, size_t *img_size);
 /* Add a new object to the object list. */
 void efi_add_handle(efi_handle_t obj);
 /* Create handle */
 efi_status_t efi_create_handle(efi_handle_t *handle);
 /* Delete handle */
-void efi_delete_handle(efi_handle_t obj);
+efi_status_t efi_delete_handle(efi_handle_t obj);
 /* Call this to validate a handle and find the EFI object for it */
 struct efi_object *efi_search_obj(const efi_handle_t handle);
+/* Locate device_path handle */
+efi_status_t EFIAPI efi_locate_device_path(const efi_guid_t *protocol,
+					   struct efi_device_path **device_path,
+					   efi_handle_t *device);
 /* Load image */
 efi_status_t EFIAPI efi_load_image(bool boot_policy,
 				   efi_handle_t parent_image,
@@ -611,25 +662,20 @@ efi_status_t efi_protocol_open(struct efi_handler *handler,
 			       void **protocol_interface, void *agent_handle,
 			       void *controller_handle, uint32_t attributes);
 
-/* Delete protocol from a handle */
-efi_status_t efi_remove_protocol(const efi_handle_t handle,
-				 const efi_guid_t *protocol,
-				 void *protocol_interface);
-/* Delete all protocols from a handle */
-efi_status_t efi_remove_all_protocols(const efi_handle_t handle);
 /* Install multiple protocol interfaces */
-efi_status_t EFIAPI efi_install_multiple_protocol_interfaces
-				(efi_handle_t *handle, ...);
+efi_status_t EFIAPI
+efi_install_multiple_protocol_interfaces(efi_handle_t *handle, ...);
+efi_status_t EFIAPI
+efi_uninstall_multiple_protocol_interfaces(efi_handle_t handle, ...);
 /* Get handles that support a given protocol */
 efi_status_t EFIAPI efi_locate_handle_buffer(
 			enum efi_locate_search_type search_type,
 			const efi_guid_t *protocol, void *search_key,
 			efi_uintn_t *no_handles, efi_handle_t **buffer);
-/* Close an previously opened protocol interface */
-efi_status_t EFIAPI efi_close_protocol(efi_handle_t handle,
-				       const efi_guid_t *protocol,
-				       efi_handle_t agent_handle,
-				       efi_handle_t controller_handle);
+/* Close a previously opened protocol interface */
+efi_status_t efi_close_protocol(efi_handle_t handle, const efi_guid_t *protocol,
+				efi_handle_t agent_handle,
+				efi_handle_t controller_handle);
 /* Open a protocol interface */
 efi_status_t EFIAPI efi_handle_protocol(efi_handle_t handle,
 					const efi_guid_t *protocol,
@@ -647,9 +693,24 @@ efi_status_t efi_set_timer(struct efi_event *event, enum efi_timer_delay type,
 /* Call this to signal an event */
 void efi_signal_event(struct efi_event *event);
 
-/* open file system: */
-struct efi_simple_file_system_protocol *efi_simple_file_system(
-		struct blk_desc *desc, int part, struct efi_device_path *dp);
+/* return true if the device is removable */
+bool efi_disk_is_removable(efi_handle_t handle);
+
+/**
+ * efi_create_simple_file_system() - create simple file system protocol
+ *
+ * Create a simple file system protocol for a partition.
+ *
+ * @desc:	block device descriptor
+ * @part:	partition number
+ * @dp:		device path
+ * @fsp:	simple file system protocol
+ * Return:	status code
+ */
+efi_status_t
+efi_create_simple_file_system(struct blk_desc *desc, int part,
+			      struct efi_device_path *dp,
+			      struct efi_simple_file_system_protocol **fsp);
 
 /* open file from device-path: */
 struct efi_file_handle *efi_file_from_path(struct efi_device_path *fp);
@@ -663,6 +724,16 @@ efi_status_t efi_file_size(struct efi_file_handle *fh, efi_uintn_t *size);
 /* get a device path from a Boot#### option */
 struct efi_device_path *efi_get_dp_from_boot(const efi_guid_t guid);
 
+/* get len, string (used in u-boot crypto from a guid */
+const char *guid_to_sha_str(const efi_guid_t *guid);
+int algo_to_len(const char *algo);
+
+int efi_link_dev(efi_handle_t handle, struct udevice *dev);
+int efi_unlink_dev(efi_handle_t handle);
+bool efi_varname_is_load_option(u16 *var_name16, int *index);
+efi_status_t efi_next_variable_name(efi_uintn_t *size, u16 **buf,
+				    efi_guid_t *guid);
+
 /**
  * efi_size_in_pages() - convert size in bytes to size in pages
  *
@@ -673,8 +744,10 @@ struct efi_device_path *efi_get_dp_from_boot(const efi_guid_t guid);
  * Return:	size in pages
  */
 #define efi_size_in_pages(size) (((size) + EFI_PAGE_MASK) >> EFI_PAGE_SHIFT)
-/* Generic EFI memory allocator, call this to get memory */
-void *efi_alloc(uint64_t len, int memory_type);
+/* Allocate boot service data pool memory */
+void *efi_alloc(size_t len);
+/* Allocate pages on the specified alignment */
+void *efi_alloc_aligned_pages(u64 len, int memory_type, size_t align);
 /* More specific EFI memory allocator, called by EFI payloads */
 efi_status_t efi_allocate_pages(enum efi_allocate_type type,
 				enum efi_memory_type memory_type,
@@ -686,6 +759,9 @@ efi_status_t efi_allocate_pool(enum efi_memory_type pool_type,
 			       efi_uintn_t size, void **buffer);
 /* EFI pool memory free function. */
 efi_status_t efi_free_pool(void *buffer);
+/* Allocate and retrieve EFI memory map */
+efi_status_t efi_get_memory_map_alloc(efi_uintn_t *map_size,
+				      struct efi_mem_desc **memory_map);
 /* Returns the EFI memory map */
 efi_status_t efi_get_memory_map(efi_uintn_t *memory_map_size,
 				struct efi_mem_desc *memory_map,
@@ -700,6 +776,10 @@ efi_status_t efi_add_conventional_memory_map(u64 ram_start, u64 ram_end,
 
 /* Called by board init to initialize the EFI drivers */
 efi_status_t efi_driver_init(void);
+/* Called when a block device is added */
+int efi_disk_probe(void *ctx, struct event *event);
+/* Called when a block device is removed */
+int efi_disk_remove(void *ctx, struct event *event);
 /* Called by board init to initialize the EFI memory map */
 int efi_memory_init(void);
 /* Adds new or overrides configuration table entry to the system table */
@@ -715,12 +795,14 @@ extern void *efi_bounce_buffer;
 #define EFI_LOADER_BOUNCE_BUFFER_SIZE (64 * 1024 * 1024)
 #endif
 
-
+/* shorten device path */
+struct efi_device_path *efi_dp_shorten(struct efi_device_path *dp);
 struct efi_device_path *efi_dp_next(const struct efi_device_path *dp);
 int efi_dp_match(const struct efi_device_path *a,
 		 const struct efi_device_path *b);
-struct efi_object *efi_dp_find_obj(struct efi_device_path *dp,
-				   struct efi_device_path **rem);
+efi_handle_t efi_dp_find_obj(struct efi_device_path *dp,
+			     const efi_guid_t *guid,
+			     struct efi_device_path **rem);
 /* get size of the first device path instance excluding end node */
 efi_uintn_t efi_dp_instance_size(const struct efi_device_path *dp);
 /* size of multi-instance device path excluding end node */
@@ -747,7 +829,7 @@ bool efi_dp_is_multi_instance(const struct efi_device_path *dp);
 struct efi_device_path *efi_dp_from_part(struct blk_desc *desc, int part);
 /* Create a device node for a block device partition. */
 struct efi_device_path *efi_dp_part_node(struct blk_desc *desc, int part);
-struct efi_device_path *efi_dp_from_file(struct blk_desc *desc, int part,
+struct efi_device_path *efi_dp_from_file(const struct efi_device_path *dp,
 					 const char *path);
 struct efi_device_path *efi_dp_from_eth(void);
 struct efi_device_path *efi_dp_from_mem(uint32_t mem_type,
@@ -759,6 +841,7 @@ const struct efi_device_path *efi_dp_last_node(
 efi_status_t efi_dp_split_file_path(struct efi_device_path *full_path,
 				    struct efi_device_path **device_path,
 				    struct efi_device_path **file_path);
+struct efi_device_path *efi_dp_from_uart(void);
 efi_status_t efi_dp_from_name(const char *dev, const char *devnr,
 			      const char *path,
 			      struct efi_device_path **device,
@@ -769,6 +852,9 @@ ssize_t efi_dp_check_length(const struct efi_device_path *dp,
 #define EFI_DP_TYPE(_dp, _type, _subtype) \
 	(((_dp)->type == DEVICE_PATH_TYPE_##_type) && \
 	 ((_dp)->sub_type == DEVICE_PATH_SUB_TYPE_##_subtype))
+
+/* template END node: */
+extern const struct efi_device_path END;
 
 /* Indicate supported runtime services */
 efi_status_t efi_init_runtime_supported(void);
@@ -816,7 +902,7 @@ efi_status_t EFIAPI efi_query_variable_info(
 			u64 *remaining_variable_storage_size,
 			u64 *maximum_variable_size);
 
-void *efi_get_var(u16 *name, const efi_guid_t *vendor, efi_uintn_t *size);
+void *efi_get_var(const u16 *name, const efi_guid_t *vendor, efi_uintn_t *size);
 
 /*
  * See section 3.1.3 in the v2.7 UEFI spec for more details on
@@ -840,9 +926,10 @@ struct efi_load_option {
 };
 
 struct efi_device_path *efi_dp_from_lo(struct efi_load_option *lo,
-				       efi_uintn_t *size, efi_guid_t guid);
+				       const efi_guid_t *guid);
 struct efi_device_path *efi_dp_concat(const struct efi_device_path *dp1,
 				      const struct efi_device_path *dp2);
+struct efi_device_path *search_gpt_dp_node(struct efi_device_path *device_path);
 efi_status_t efi_deserialize_load_option(struct efi_load_option *lo, u8 *data,
 					 efi_uintn_t *size);
 unsigned long efi_serialize_load_option(struct efi_load_option *lo, u8 **data);
@@ -900,8 +987,27 @@ struct efi_signature_store {
 struct x509_certificate;
 struct pkcs7_message;
 
+/**
+ * struct eficonfig_media_boot_option - boot option for (removable) media device
+ *
+ * This structure is used to enumerate possible boot option
+ *
+ * @lo:		Serialized load option data
+ * @size:	Size of serialized load option data
+ * @exist:	Flag to indicate the load option already exists
+ *		in Non-volatile load option
+ */
+struct eficonfig_media_boot_option {
+	void *lo;
+	efi_uintn_t size;
+	bool exist;
+};
+
+bool efi_hash_regions(struct image_region *regs, int count,
+		      void **hash, const char *hash_algo, int *len);
 bool efi_signature_lookup_digest(struct efi_image_regions *regs,
-				 struct efi_signature_store *db);
+				 struct efi_signature_store *db,
+				 bool dbx);
 bool efi_signature_verify(struct efi_image_regions *regs,
 			  struct pkcs7_message *msg,
 			  struct efi_signature_store *db,
@@ -940,9 +1046,10 @@ struct pkcs7_message *efi_parse_pkcs7_header(const void *buf,
 /* runtime implementation of memcpy() */
 void efi_memcpy_runtime(void *dest, const void *src, size_t n);
 
-/* commonly used helper function */
+/* commonly used helper functions */
 u16 *efi_create_indexed_name(u16 *buffer, size_t buffer_size, const char *name,
 			     unsigned int index);
+efi_string_t efi_convert_string(const char *str);
 
 extern const struct efi_firmware_management_protocol efi_fmp_fit;
 extern const struct efi_firmware_management_protocol efi_fmp_raw;
@@ -962,14 +1069,58 @@ efi_status_t efi_capsule_authenticate(const void *capsule,
 				      efi_uintn_t capsule_size,
 				      void **image, efi_uintn_t *image_size);
 
-#define EFI_CAPSULE_DIR L"\\EFI\\UpdateCapsule\\"
+#define EFI_CAPSULE_DIR u"\\EFI\\UpdateCapsule\\"
+
+/**
+ * struct efi_fw_image -  Information on firmware images updatable through
+ *                        capsule update
+ *
+ * This structure gives information about the firmware images on the platform
+ * which can be updated through the capsule update mechanism
+ *
+ * @image_type_id:	Image GUID. Same value is to be used in the capsule
+ * @fw_name:		Name of the firmware image
+ * @image_index:	Image Index, same as value passed to SetImage FMP
+ *                      function
+ */
+struct efi_fw_image {
+	efi_guid_t image_type_id;
+	u16 *fw_name;
+	u8 image_index;
+};
+
+/**
+ * struct efi_capsule_update_info - Information needed for capsule updates
+ *
+ * This structure provides information needed for performing firmware
+ * updates. The structure needs to be initialised per platform, for all
+ * platforms which enable capsule updates
+ *
+ * @dfu_string:		String used to populate dfu_alt_info
+ * @num_images:		The number of images array entries
+ * @images:		Pointer to an array of updatable images
+ */
+struct efi_capsule_update_info {
+	const char *dfu_string;
+	int num_images;
+	struct efi_fw_image *images;
+};
+
+extern struct efi_capsule_update_info update_info;
 
 /**
  * Install the ESRT system table.
  *
- * @return	status code
+ * Return:	status code
  */
 efi_status_t efi_esrt_register(void);
+
+/**
+ * efi_ecpt_register() - Install the ECPT system table.
+ *
+ * Return: status code
+ */
+efi_status_t efi_ecpt_register(void);
 
 /**
  * efi_esrt_populate() - Populates the ESRT entries from the FMP instances
@@ -983,4 +1134,37 @@ efi_status_t efi_esrt_register(void);
  */
 efi_status_t efi_esrt_populate(void);
 efi_status_t efi_load_capsule_drivers(void);
+
+efi_status_t platform_get_eventlog(struct udevice *dev, u64 *addr, u32 *sz);
+
+efi_status_t efi_locate_handle_buffer_int(enum efi_locate_search_type search_type,
+					  const efi_guid_t *protocol, void *search_key,
+					  efi_uintn_t *no_handles, efi_handle_t **buffer);
+
+efi_status_t efi_open_volume_int(struct efi_simple_file_system_protocol *this,
+				 struct efi_file_handle **root);
+efi_status_t efi_file_open_int(struct efi_file_handle *this,
+			       struct efi_file_handle **new_handle,
+			       u16 *file_name, u64 open_mode,
+			       u64 attributes);
+efi_status_t efi_file_close_int(struct efi_file_handle *file);
+efi_status_t efi_file_read_int(struct efi_file_handle *this,
+			       efi_uintn_t *buffer_size, void *buffer);
+efi_status_t efi_file_setpos_int(struct efi_file_handle *file, u64 pos);
+
+typedef efi_status_t (*efi_console_filter_func)(struct efi_input_key *key);
+efi_status_t efi_console_get_u16_string
+		(struct efi_simple_text_input_protocol *cin,
+		 u16 *buf, efi_uintn_t count, efi_console_filter_func filer_func,
+		 int row, int col);
+
+efi_status_t efi_disk_get_device_name(const efi_handle_t handle, char *buf, int size);
+
+/**
+ * efi_add_known_memory() - add memory banks to EFI memory map
+ *
+ * This weak function may be overridden for specific architectures.
+ */
+void efi_add_known_memory(void);
+
 #endif /* _EFI_LOADER_H */

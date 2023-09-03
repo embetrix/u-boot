@@ -3,6 +3,8 @@
  * Copyright (c) 2016 Google, Inc
  */
 
+#define LOG_CATEGORY	UCLASS_RAM
+
 #include <common.h>
 #include <dm.h>
 #include <init.h>
@@ -25,7 +27,7 @@ static const char *const ecc_decoder[] = {
 	"active"
 };
 
-ulong mrc_common_board_get_usable_ram_top(ulong total_size)
+phys_size_t mrc_common_board_get_usable_ram_top(phys_size_t total_size)
 {
 	struct memory_info *info = &gd->arch.meminfo;
 	uintptr_t dest_addr = 0;
@@ -50,7 +52,7 @@ ulong mrc_common_board_get_usable_ram_top(ulong total_size)
 
 	dest_addr = largest->start + largest->size;
 
-	return (ulong)dest_addr;
+	return (phys_size_t)dest_addr;
 }
 
 void mrc_common_dram_init_banksize(void)
@@ -144,12 +146,10 @@ int mrc_locate_spd(struct udevice *dev, int size, const void **spd_datap)
 
 	ret = gpio_request_list_by_name(dev, "board-id-gpios", desc,
 					ARRAY_SIZE(desc), GPIOD_IS_IN);
-	if (ret < 0) {
-		debug("%s: gpio ret=%d\n", __func__, ret);
-		return ret;
-	}
+	if (ret < 0)
+		return log_msg_ret("gpio", ret);
 	spd_index = dm_gpio_get_values_as_int(desc, ret);
-	debug("spd index %d\n", spd_index);
+	log_debug("spd index %d\n", spd_index);
 
 	node = fdt_first_subnode(blob, dev_of_offset(dev));
 	if (node < 0)
@@ -200,7 +200,7 @@ static int sdram_initialise(struct udevice *dev, struct udevice *me_dev,
 
 	debug("PEI data at %p:\n", pei_data);
 
-	data = (char *)CONFIG_X86_MRC_ADDR;
+	data = (char *)CFG_X86_MRC_ADDR;
 	if (data) {
 		int rv;
 		ulong start;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright 2014 Freescale Semiconductor, Inc.
+ * Copyright 2021 NXP
  */
 
 #include <common.h>
@@ -20,6 +21,7 @@
 #include <config.h>
 #include <fsl_wdog.h>
 #include <linux/delay.h>
+#include <dm.h>
 
 #include "fsl_epu.h"
 
@@ -166,18 +168,18 @@ static void mmu_setup(void)
 	/* Level 1 has 512 entries */
 	for (i = 0; i < 512; i++) {
 		/* Mapping for PCIe 1 */
-		if (va_start >= CONFIG_SYS_PCIE1_VIRT_ADDR &&
-		    va_start < (CONFIG_SYS_PCIE1_VIRT_ADDR +
-				 CONFIG_SYS_PCIE_MMAP_SIZE))
+		if (va_start >= CFG_SYS_PCIE1_VIRT_ADDR &&
+		    va_start < (CFG_SYS_PCIE1_VIRT_ADDR +
+				 CFG_SYS_PCIE_MMAP_SIZE))
 			set_pgsection(level1_table, i,
-				      CONFIG_SYS_PCIE1_PHYS_BASE + va_start,
+				      CFG_SYS_PCIE1_PHYS_BASE + va_start,
 				      MT_DEVICE_MEM);
 		/* Mapping for PCIe 2 */
-		else if (va_start >= CONFIG_SYS_PCIE2_VIRT_ADDR &&
-			 va_start < (CONFIG_SYS_PCIE2_VIRT_ADDR +
-				     CONFIG_SYS_PCIE_MMAP_SIZE))
+		else if (va_start >= CFG_SYS_PCIE2_VIRT_ADDR &&
+			 va_start < (CFG_SYS_PCIE2_VIRT_ADDR +
+				     CFG_SYS_PCIE_MMAP_SIZE))
 			set_pgsection(level1_table, i,
-				      CONFIG_SYS_PCIE2_PHYS_BASE + va_start,
+				      CFG_SYS_PCIE2_PHYS_BASE + va_start,
 				      MT_DEVICE_MEM);
 		else
 			set_pgsection(level1_table, i,
@@ -226,7 +228,7 @@ void enable_caches(void)
 
 uint get_svr(void)
 {
-	struct ccsr_gur __iomem *gur = (void *)(CONFIG_SYS_FSL_GUTS_ADDR);
+	struct ccsr_gur __iomem *gur = (void *)(CFG_SYS_FSL_GUTS_ADDR);
 
 	return in_be32(&gur->svr);
 }
@@ -235,7 +237,7 @@ uint get_svr(void)
 int print_cpuinfo(void)
 {
 	char buf1[32], buf2[32];
-	struct ccsr_gur __iomem *gur = (void *)(CONFIG_SYS_FSL_GUTS_ADDR);
+	struct ccsr_gur __iomem *gur = (void *)(CFG_SYS_FSL_GUTS_ADDR);
 	unsigned int svr, major, minor, ver, i;
 
 	svr = in_be32(&gur->svr);
@@ -300,21 +302,12 @@ int cpu_mmc_init(struct bd_info *bis)
 }
 #endif
 
-int cpu_eth_init(struct bd_info *bis)
-{
-#if defined(CONFIG_TSEC_ENET) && !defined(CONFIG_DM_ETH)
-	tsec_standard_init(bis);
-#endif
-
-	return 0;
-}
-
 int arch_cpu_init(void)
 {
-	void *epu_base = (void *)(CONFIG_SYS_DCSRBAR + EPU_BLOCK_OFFSET);
+	void *epu_base = (void *)(CFG_SYS_DCSRBAR + EPU_BLOCK_OFFSET);
 	void *rcpm2_base =
-		(void *)(CONFIG_SYS_DCSRBAR + DCSR_RCPM2_BLOCK_OFFSET);
-	struct ccsr_scfg *scfg = (void *)CONFIG_SYS_FSL_SCFG_ADDR;
+		(void *)(CFG_SYS_DCSRBAR + DCSR_RCPM2_BLOCK_OFFSET);
+	struct ccsr_scfg *scfg = (void *)CFG_SYS_FSL_SCFG_ADDR;
 	u32 state;
 
 	icache_enable();
@@ -353,7 +346,7 @@ int arch_cpu_init(void)
 /* Set the address at which the secondary core starts from.*/
 void smp_set_core_boot_addr(unsigned long addr, int corenr)
 {
-	struct ccsr_gur __iomem *gur = (void *)(CONFIG_SYS_FSL_GUTS_ADDR);
+	struct ccsr_gur __iomem *gur = (void *)(CFG_SYS_FSL_GUTS_ADDR);
 
 	out_be32(&gur->scratchrw[0], addr);
 }
@@ -361,7 +354,7 @@ void smp_set_core_boot_addr(unsigned long addr, int corenr)
 /* Release the secondary core from holdoff state and kick it */
 void smp_kick_all_cpus(void)
 {
-	struct ccsr_gur __iomem *gur = (void *)(CONFIG_SYS_FSL_GUTS_ADDR);
+	struct ccsr_gur __iomem *gur = (void *)(CFG_SYS_FSL_GUTS_ADDR);
 
 	out_be32(&gur->brrl, 0x2);
 
@@ -397,3 +390,19 @@ void arch_preboot_os(void)
 	ctrl &= ~ARCH_TIMER_CTRL_ENABLE;
 	asm("mcr p15, 0, %0, c14, c2, 1" : : "r" (ctrl));
 }
+
+#ifdef CONFIG_ARCH_MISC_INIT
+int arch_misc_init(void)
+{
+	if (IS_ENABLED(CONFIG_FSL_CAAM)) {
+		struct udevice *dev;
+		int ret;
+
+		ret = uclass_get_device_by_driver(UCLASS_MISC, DM_DRIVER_GET(caam_jr), &dev);
+		if (ret)
+			printf("Failed to initialize caam_jr: %d\n", ret);
+	}
+
+	return 0;
+}
+#endif

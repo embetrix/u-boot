@@ -794,34 +794,53 @@ fall afoul of this rule.
 Activation/probe
 ^^^^^^^^^^^^^^^^
 
-When a device needs to be used, U-Boot activates it, by first reading ofdata
-as above and then following these steps (see device_probe()):
+To save resources devices in U-Boot are probed lazily. U-Boot is a bootloader,
+not an operating system. Many devices are never used during an U-Boot run, and
+probing them takes time, requires memory, may add delays to the main loop, etc.
+
+The device should be probed by the uclass code or generic device code (e.g.
+device_find_global_by_ofnode()). Uclasses differ but two common use cases can be
+seen:
+
+   1. The uclass is asked to look up a specific device, such as SPI bus 0,
+      first chip select - in this case the returned device should be
+      activated.
+
+   2. The uclass is asked to perform a specific function on any device that
+      supports it, eg. reset the board using any sysreset that can be found -
+      for this case the core uclass code provides iterators that activate
+      each device before returning it, and the uclass typically implements a
+      walk function that iterates over all devices of the uclass and tries
+      to perform the requested function on each in turn until succesful.
+
+To activate a device U-Boot first reads ofdata as above and then follows these
+steps (see device_probe()):
 
    1. All parent devices are probed. It is not possible to activate a device
-   unless its predecessors (all the way up to the root device) are activated.
-   This means (for example) that an I2C driver will require that its bus
-   be activated.
+      unless its predecessors (all the way up to the root device) are activated.
+      This means (for example) that an I2C driver will require that its bus
+      be activated.
 
    2. The device's probe() method is called. This should do anything that
-   is required by the device to get it going. This could include checking
-   that the hardware is actually present, setting up clocks for the
-   hardware and setting up hardware registers to initial values. The code
-   in probe() can access:
+      is required by the device to get it going. This could include checking
+      that the hardware is actually present, setting up clocks for the
+      hardware and setting up hardware registers to initial values. The code
+      in probe() can access:
 
       - platform data in dev->plat (for configuration)
       - private data in dev->priv (for run-time state)
       - uclass data in dev->uclass_priv (for things the uclass stores
         about this device)
 
-   Note: If you don't use priv_auto then you will need to
-   allocate the priv space here yourself. The same applies also to
-   plat_auto. Remember to free them in the remove() method.
+      Note: If you don't use priv_auto then you will need to
+      allocate the priv space here yourself. The same applies also to
+      plat_auto. Remember to free them in the remove() method.
 
    3. The device is marked 'activated'
 
    4. The uclass's post_probe() method is called, if one exists. This may
-   cause the uclass to do some housekeeping to record the device as
-   activated and 'known' by the uclass.
+      cause the uclass to do some housekeeping to record the device as
+      activated and 'known' by the uclass.
 
 Running stage
 ^^^^^^^^^^^^^
@@ -1042,6 +1061,27 @@ data structure might be worthwhile in some rare cases, once we understand
 what the bottlenecks are.
 
 
+Tag Support
+-----------
+
+It is sometimes useful for a subsystem to associate its own private
+data (or object) to a DM device, i.e. struct udevice, to support
+additional features.
+
+Tag support in driver model will give us the ability to do so dynamically
+instead of modifying "udevice" data structure. In the initial release, we
+will support two type of attributes:
+
+- a pointer with dm_tag_set_ptr(), and
+- an unsigned long with dm_tag_set_val()
+
+For example, UEFI subsystem utilizes the feature to maintain efi_disk
+objects depending on linked udevice's lifecycle.
+
+While the current implementation is quite simple, it will get evolved
+as the feature is more extensively used in U-Boot subsystems.
+
+
 Changes since v1
 ----------------
 
@@ -1074,12 +1114,12 @@ Pre-Relocation Support
 ----------------------
 
 For pre-relocation we simply call the driver model init function. Only
-drivers marked with DM_FLAG_PRE_RELOC or the device tree 'u-boot,dm-pre-reloc'
+drivers marked with DM_FLAG_PRE_RELOC or the device tree 'bootph-all'
 property are initialised prior to relocation. This helps to reduce the driver
 model overhead. This flag applies to SPL and TPL as well, if device tree is
 enabled (CONFIG_OF_CONTROL) there.
 
-Note when device tree is enabled, the device tree 'u-boot,dm-pre-reloc'
+Note when device tree is enabled, the device tree 'bootph-all'
 property can provide better control granularity on which device is bound
 before relocation. While with DM_FLAG_PRE_RELOC flag of the driver all
 devices with the same driver are bound, which requires allocation a large
@@ -1088,14 +1128,15 @@ only way for statically declared devices via U_BOOT_DRVINFO() to be bound
 prior to relocation.
 
 It is possible to limit this to specific relocation steps, by using
-the more specialized 'u-boot,dm-spl' and 'u-boot,dm-tpl' flags
-in the device tree node. For U-Boot proper you can use 'u-boot,dm-pre-proper'
+the more specialized 'bootph-pre-ram' and 'bootph-pre-sram' flags
+in the device tree node. For U-Boot proper you can use 'bootph-some-ram'
 which means that it will be processed (and a driver bound) in U-Boot proper
 prior to relocation, but will not be available in SPL or TPL.
 
-To reduce the size of SPL and TPL, only the nodes with pre-relocation properties
-('u-boot,dm-pre-reloc', 'u-boot,dm-spl' or 'u-boot,dm-tpl') are keept in their
-device trees (see README.SPL for details); the remaining nodes are always bound.
+To reduce the size of SPL and TPL, only the nodes with pre-relocation
+properties ('bootph-all', 'bootph-pre-ram' or 'bootph-pre-sram') are kept in
+their device trees (see README.SPL for details); the remaining nodes are
+always bound.
 
 Then post relocation we throw that away and re-init driver model again.
 For drivers which require some sort of continuity between pre- and
@@ -1114,7 +1155,7 @@ constrained systems.
 To enable driver model in SPL, define CONFIG_SPL_DM. You might want to
 consider the following option also. See the main README for more details.
 
-   - CONFIG_SYS_MALLOC_SIMPLE
+   - CONFIG_SPL_SYS_MALLOC_SIMPLE
    - CONFIG_DM_WARN
    - CONFIG_DM_DEVICE_REMOVE
    - CONFIG_DM_STDIO

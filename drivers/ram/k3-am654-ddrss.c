@@ -13,10 +13,13 @@
 #include <ram.h>
 #include <asm/io.h>
 #include <power-domain.h>
-#include <asm/arch/sys_proto.h>
 #include <dm/device_compat.h>
 #include <power/regulator.h>
 #include "k3-am654-ddrss.h"
+
+void sdelay(unsigned long loops);
+u32 wait_on_value(u32 read_bit_mask, u32 match_value, void *read_addr,
+		  u32 bound);
 
 #define LDELAY 10000
 
@@ -264,6 +267,16 @@ static void am654_ddrss_phy_configuration(struct am654_ddrss_desc *ddrss)
 	ddrss_phy_writel(DDRSS_DDRPHY_ACIOCR3, ioctl->ddrphy_aciocr3);
 	ddrss_phy_writel(DDRSS_DDRPHY_ACIOCR5, ioctl->ddrphy_aciocr5);
 	ddrss_phy_writel(DDRSS_DDRPHY_IOVCR0, ioctl->ddrphy_iovcr0);
+
+	ddrss_phy_writel(DDRSS_DDRPHY_DX2GCR0, cfg->ddrphy_dx2gcr0);
+	ddrss_phy_writel(DDRSS_DDRPHY_DX2GCR1, cfg->ddrphy_dx2gcr1);
+	ddrss_phy_writel(DDRSS_DDRPHY_DX2GCR2, cfg->ddrphy_dx2gcr2);
+	ddrss_phy_writel(DDRSS_DDRPHY_DX2GCR3, cfg->ddrphy_dx2gcr3);
+
+	ddrss_phy_writel(DDRSS_DDRPHY_DX3GCR0, cfg->ddrphy_dx3gcr0);
+	ddrss_phy_writel(DDRSS_DDRPHY_DX3GCR1, cfg->ddrphy_dx3gcr1);
+	ddrss_phy_writel(DDRSS_DDRPHY_DX3GCR2, cfg->ddrphy_dx3gcr2);
+	ddrss_phy_writel(DDRSS_DDRPHY_DX3GCR3, cfg->ddrphy_dx3gcr3);
 
 	ddrss_phy_writel(DDRSS_DDRPHY_DX4GCR0, cfg->ddrphy_dx4gcr0);
 	ddrss_phy_writel(DDRSS_DDRPHY_DX4GCR1, cfg->ddrphy_dx4gcr1);
@@ -874,9 +887,8 @@ static int am654_ddrss_power_on(struct am654_ddrss_desc *ddrss)
 	device_get_supply_regulator(ddrss->dev, "vtt-supply",
 				    &ddrss->vtt_supply);
 	ret = regulator_set_value(ddrss->vtt_supply, 3300000);
-	if (ret)
-		return ret;
-	debug("VTT regulator enabled\n");
+	if (ret == 0)
+		debug("VTT regulator enabled\n");
 #endif
 
 	return 0;

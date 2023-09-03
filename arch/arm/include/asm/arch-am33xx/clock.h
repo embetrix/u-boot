@@ -13,10 +13,6 @@
 #include <asm/arch/clocks_am33xx.h>
 #include <asm/arch/hardware.h>
 
-#if defined(CONFIG_TI816X) || defined(CONFIG_TI814X)
-#include <asm/arch/clock_ti81xx.h>
-#endif
-
 #define LDELAY 1000000
 
 /*CM_<clock_domain>__CLKCTRL */
@@ -77,6 +73,18 @@
 #define CM_CLKSEL_DPLL_M_MASK			(0x7FF << 8)
 #define CM_CLKSEL_DPLL_N_SHIFT			0
 #define CM_CLKSEL_DPLL_N_MASK			0x7F
+
+/* CM_SSC_DELTAM_DPLL */
+#define CM_SSC_DELTAM_DPLL_FRAC_SHIFT		0
+#define CM_SSC_DELTAM_DPLL_FRAC_MASK		GENMASK(17, 0)
+#define CM_SSC_DELTAM_DPLL_INT_SHIFT		18
+#define CM_SSC_DELTAM_DPLL_INT_MASK		GENMASK(19, 18)
+
+/* CM_SSC_MODFREQ_DPLL */
+#define CM_SSC_MODFREQ_DPLL_MANT_SHIFT		0
+#define CM_SSC_MODFREQ_DPLL_MANT_MASK		GENMASK(6, 0)
+#define CM_SSC_MODFREQ_DPLL_EXP_SHIFT		7
+#define CM_SSC_MODFREQ_DPLL_EXP_MASK		GENMASK(10, 8)
 
 struct dpll_params {
 	u32 m;

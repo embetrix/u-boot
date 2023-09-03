@@ -43,7 +43,7 @@ u32 spl_boot_device(void)
 	case BOOT_SERIAL_UART_8:
 		return BOOT_DEVICE_UART;
 	case BOOT_SERIAL_USB_OTG:
-		return BOOT_DEVICE_USB;
+		return BOOT_DEVICE_DFU;
 	case BOOT_FLASH_NAND_FMC:
 		return BOOT_DEVICE_NAND;
 	case BOOT_FLASH_NOR_QSPI:
@@ -55,7 +55,7 @@ u32 spl_boot_device(void)
 	return BOOT_DEVICE_MMC1;
 }
 
-u32 spl_mmc_boot_mode(const u32 boot_device)
+u32 spl_mmc_boot_mode(struct mmc *mmc, const u32 boot_device)
 {
 	return MMCSD_MODE_RAW;
 }
@@ -112,7 +112,7 @@ uint32_t stm32mp_get_dram_size(void)
 
 static int optee_get_reserved_memory(uint32_t *start, uint32_t *size)
 {
-	phys_size_t fdt_mem_size;
+	fdt_addr_t fdt_mem_size;
 	fdt_addr_t fdt_start;
 	ofnode node;
 
@@ -190,6 +190,7 @@ void board_init_f(ulong dummy)
 	int ret;
 
 	arch_cpu_init();
+	mach_cpu_init();
 
 	ret = spl_early_init();
 	if (ret) {

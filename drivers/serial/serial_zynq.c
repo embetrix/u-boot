@@ -21,6 +21,7 @@
 
 #define ZYNQ_UART_SR_TXACTIVE	BIT(11) /* TX active */
 #define ZYNQ_UART_SR_TXFULL	BIT(4) /* TX FIFO full */
+#define ZYNQ_UART_SR_TXEMPTY	BIT(3) /* TX FIFO empty */
 #define ZYNQ_UART_SR_RXEMPTY	BIT(1) /* RX FIFO empty */
 
 #define ZYNQ_UART_CR_TX_EN	BIT(4) /* TX enabled */
@@ -74,7 +75,7 @@ static void _uart_zynq_serial_setbrg(struct uart_zynq *regs,
 	 * Find acceptable values for baud generation.
 	 */
 	for (bdiv = 4; bdiv < 255; bdiv++) {
-		bgen = clock / (baud * (bdiv + 1));
+		bgen = DIV_ROUND_CLOSEST(clock, baud * (bdiv + 1));
 		if (bgen < 2 || bgen > 65535)
 			continue;
 
@@ -107,8 +108,13 @@ static void _uart_zynq_serial_init(struct uart_zynq *regs)
 
 static int _uart_zynq_serial_putc(struct uart_zynq *regs, const char c)
 {
-	if (readl(&regs->channel_sts) & ZYNQ_UART_SR_TXFULL)
-		return -EAGAIN;
+	if (IS_ENABLED(CONFIG_DEBUG_UART_ZYNQ)) {
+		if (!(readl(&regs->channel_sts) & ZYNQ_UART_SR_TXEMPTY))
+			return -EAGAIN;
+	} else {
+		if (readl(&regs->channel_sts) & ZYNQ_UART_SR_TXFULL)
+			return -EAGAIN;
+	}
 
 	writel(c, &regs->tx_rx_fifo);
 
@@ -253,9 +259,9 @@ static int zynq_serial_of_to_plat(struct udevice *dev)
 {
 	struct zynq_uart_plat *plat = dev_get_plat(dev);
 
-	plat->regs = (struct uart_zynq *)dev_read_addr(dev);
-	if (IS_ERR(plat->regs))
-		return PTR_ERR(plat->regs);
+	plat->regs = dev_read_addr_ptr(dev);
+	if (!plat->regs)
+		return -EINVAL;
 
 	return 0;
 }
@@ -272,6 +278,7 @@ static const struct udevice_id zynq_serial_ids[] = {
 	{ .compatible = "xlnx,xuartps" },
 	{ .compatible = "cdns,uart-r1p8" },
 	{ .compatible = "cdns,uart-r1p12" },
+	{ .compatible = "xlnx,zynqmp-uart" },
 	{ }
 };
 
@@ -288,7 +295,7 @@ U_BOOT_DRIVER(serial_zynq) = {
 #ifdef CONFIG_DEBUG_UART_ZYNQ
 static inline void _debug_uart_init(void)
 {
-	struct uart_zynq *regs = (struct uart_zynq *)CONFIG_DEBUG_UART_BASE;
+	struct uart_zynq *regs = (struct uart_zynq *)CONFIG_VAL(DEBUG_UART_BASE);
 
 	_uart_zynq_serial_init(regs);
 	_uart_zynq_serial_setbrg(regs, CONFIG_DEBUG_UART_CLOCK,
@@ -297,10 +304,10 @@ static inline void _debug_uart_init(void)
 
 static inline void _debug_uart_putc(int ch)
 {
-	struct uart_zynq *regs = (struct uart_zynq *)CONFIG_DEBUG_UART_BASE;
+	struct uart_zynq *regs = (struct uart_zynq *)CONFIG_VAL(DEBUG_UART_BASE);
 
 	while (_uart_zynq_serial_putc(regs, ch) == -EAGAIN)
-		WATCHDOG_RESET();
+		schedule();
 }
 
 DEBUG_UART_FUNCS

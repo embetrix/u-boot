@@ -211,6 +211,11 @@ M:	Aleksandr Aleksandrov <aleksandr.aleksandrov@emlid.com>
 S:	Maintained
 F:	configs/emlid_neutis_n5_devboard_defconfig
 
+LCTECH PI F1C200S
+M:	Andre Przywara <andre.przywara@arm.com>
+S:	Maintained
+F:	configs/lctech_pi_f1c200s_defconfig
+
 GEMEI-G9 TABLET
 M:	Priit Laes <plaes@plaes.org>
 S:	Maintained
@@ -265,6 +270,11 @@ LICHEEPI-ZERO BOARD
 M:	Icenowy Zheng <icenowy@aosc.xyz>
 S:	Maintained
 F:	configs/LicheePi_Zero_defconfig
+
+LICHEEPI NANO BOARD
+M:	Icenowy Zheng <icenowy@aosc.xyz>
+S:	Maintained
+F:	configs/licheepi_nano_defconfig
 
 LINKSPRITE-PCDUINO BOARD
 M:	Zoltan Herpai <wigyori@uid0.hu>
@@ -357,6 +367,11 @@ NANOPI-NEO-AIR BOARD
 M:	Jelle van der Waa <jelle@vdwaa.nl>
 S:	Maintained
 F:	configs/nanopi_neo_air_defconfig
+
+NANOPI-R1S-H5 BOARD
+M:	Chukun Pan <amadeus@jmu.edu.cn>
+S:	Maintained
+F:	configs/nanopi_r1s_h5_defconfig
 
 NANOPI-A64 BOARD
 M:	Jagan Teki <jagan@amarulasolutions.com>
@@ -471,6 +486,11 @@ M:	Samuel Holland <samuel@sholland.org>
 S:	Maintained
 F:	configs/pinephone_defconfig
 
+PINETAB BOARD
+M:	Arnaud Ferraris <arnaud.ferraris@collabora.com>
+S:	Maintained
+F:	configs/pinetab_defconfig
+
 R16 EVB PARROT BOARD
 M:	Quentin Schulz <quentin.schulz@free-electrons.com>
 S:	Maintained
@@ -519,6 +539,11 @@ WEXLER-TAB7200 BOARD
 M:	Aleksei Mamlin <mamlinav@gmail.com>
 S:	Maintained
 F:	configs/Wexler_TAB7200_defconfig
+
+X96 MATE TV BOX
+M:	Andre Przywara <andre.przywara@arm.com>
+S:	Maintained
+F:	configs/x96_mate_defconfig
 
 YONES TOPTECH BD1078 BOARD
 M:	Paul Kocialkowski <contact@paulk.fr>

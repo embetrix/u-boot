@@ -27,7 +27,7 @@
 
 #ifdef CONFIG_MISC_INIT_R
 
-#if CONFIG_IS_ENABLED(SIFIVE_OTP)
+#if IS_ENABLED(CONFIG_SIFIVE_OTP)
 static u32 otp_read_serialnum(struct udevice *dev)
 {
 	int ret;
@@ -53,7 +53,7 @@ static u32 fu540_read_serialnum(void)
 {
 	u32 serial = ERROR_READING_SERIAL_NUMBER;
 
-#if CONFIG_IS_ENABLED(SIFIVE_OTP)
+#if IS_ENABLED(CONFIG_SIFIVE_OTP)
 	struct udevice *dev;
 	int ret;
 
@@ -114,14 +114,15 @@ int misc_init_r(void)
 
 #endif
 
-void *board_fdt_blob_setup(void)
+void *board_fdt_blob_setup(int *err)
 {
-	if (IS_ENABLED(CONFIG_OF_SEPARATE)) {
+	*err = 0;
+	if (IS_ENABLED(CONFIG_OF_SEPARATE) || IS_ENABLED(CONFIG_OF_BOARD)) {
 		if (gd->arch.firmware_fdt_addr)
-			return (ulong *)gd->arch.firmware_fdt_addr;
-		else
-			return (ulong *)&_end;
+			return (ulong *)(uintptr_t)gd->arch.firmware_fdt_addr;
 	}
+
+	return (ulong *)&_end;
 }
 
 int board_init(void)

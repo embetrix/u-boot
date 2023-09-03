@@ -21,17 +21,22 @@
  * clock.
  */
 
+#define LOG_CATEGORY UCLASS_CLK
+
 #include <common.h>
 #include <clk.h>
 #include <clk-uclass.h>
+#include <log.h>
+#include <malloc.h>
+#include <asm/io.h>
 #include <dm/device.h>
+#include <dm/device_compat.h>
 #include <dm/devres.h>
 #include <dm/uclass.h>
 #include <linux/bitops.h>
-#include <malloc.h>
-#include <asm/io.h>
 #include <linux/clk-provider.h>
 #include <linux/err.h>
+
 #include "clk.h"
 
 #define UBOOT_DM_CLK_CCF_MUX "ccf_clk_mux"
@@ -85,7 +90,7 @@ u8 clk_mux_get_parent(struct clk *clk)
 	struct clk_mux *mux = to_clk_mux(clk);
 	u32 val;
 
-#if CONFIG_IS_ENABLED(SANDBOX_CLK_CCF)
+#if IS_ENABLED(CONFIG_SANDBOX_CLK_CCF)
 	val = mux->io_mux_val;
 #else
 	val = readl(mux->reg);
@@ -123,7 +128,7 @@ static int clk_mux_set_parent(struct clk *clk, struct clk *parent)
 
 	index = clk_fetch_parent_index(clk, parent);
 	if (index < 0) {
-		printf("Could not fetch index\n");
+		log_err("Could not fetch index\n");
 		return index;
 	}
 
@@ -132,7 +137,7 @@ static int clk_mux_set_parent(struct clk *clk, struct clk *parent)
 	if (mux->flags & CLK_MUX_HIWORD_MASK) {
 		reg = mux->mask << (mux->shift + 16);
 	} else {
-#if CONFIG_IS_ENABLED(SANDBOX_CLK_CCF)
+#if IS_ENABLED(CONFIG_SANDBOX_CLK_CCF)
 		reg = mux->io_mux_val;
 #else
 		reg = readl(mux->reg);
@@ -141,7 +146,7 @@ static int clk_mux_set_parent(struct clk *clk, struct clk *parent)
 	}
 	val = val << mux->shift;
 	reg |= val;
-#if CONFIG_IS_ENABLED(SANDBOX_CLK_CCF)
+#if IS_ENABLED(CONFIG_SANDBOX_CLK_CCF)
 	mux->io_mux_val = reg;
 #else
 	writel(reg, mux->reg);
@@ -169,7 +174,7 @@ struct clk *clk_hw_register_mux_table(struct device *dev, const char *name,
 	if (clk_mux_flags & CLK_MUX_HIWORD_MASK) {
 		width = fls(mask) - ffs(mask) + 1;
 		if (width + shift > 16) {
-			pr_err("mux value exceeds LOWORD field\n");
+			dev_err(dev, "mux value exceeds LOWORD field\n");
 			return ERR_PTR(-EINVAL);
 		}
 	}
@@ -179,7 +184,7 @@ struct clk *clk_hw_register_mux_table(struct device *dev, const char *name,
 	if (!mux)
 		return ERR_PTR(-ENOMEM);
 
-	/* U-boot specific assignments */
+	/* U-Boot specific assignments */
 	mux->parent_names = parent_names;
 	mux->num_parents = num_parents;
 
@@ -189,7 +194,7 @@ struct clk *clk_hw_register_mux_table(struct device *dev, const char *name,
 	mux->mask = mask;
 	mux->flags = clk_mux_flags;
 	mux->table = table;
-#if CONFIG_IS_ENABLED(SANDBOX_CLK_CCF)
+#if IS_ENABLED(CONFIG_SANDBOX_CLK_CCF)
 	mux->io_mux_val = *(u32 *)reg;
 #endif
 

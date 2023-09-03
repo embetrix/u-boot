@@ -47,7 +47,7 @@
 	};
 };
 
-&nand0 {
+&nfc0 {
 	status = "okay";
 };
 
@@ -62,7 +62,7 @@
 };
 
 &uart1 {
-	u-boot,dm-pre-reloc;
+	bootph-all;
 	status = "okay";
 };
 

@@ -225,7 +225,7 @@ static int __davinci_spi_claim_bus(struct davinci_spi_slave *ds, int cs)
 		SPIPC0_DOFUN_MASK | SPIPC0_DIFUN_MASK), &ds->regs->pc0);
 
 	/* setup format */
-	scalar = ((CONFIG_SYS_SPI_CLK / ds->freq) - 1) & 0xFF;
+	scalar = ((CFG_SYS_SPI_CLK / ds->freq) - 1) & 0xFF;
 
 	/*
 	 * Use following format:
@@ -314,7 +314,7 @@ static int davinci_spi_set_speed(struct udevice *bus, uint max_hz)
 	struct davinci_spi_slave *ds = dev_get_priv(bus);
 
 	debug("%s speed %u\n", __func__, max_hz);
-	if (max_hz > CONFIG_SYS_SPI_CLK / 2)
+	if (max_hz > CFG_SYS_SPI_CLK / 2)
 		return -EINVAL;
 
 	ds->freq = max_hz;
@@ -391,7 +391,7 @@ static int davinci_spi_probe(struct udevice *bus)
 	return 0;
 }
 
-#if CONFIG_IS_ENABLED(OF_CONTROL) && !CONFIG_IS_ENABLED(OF_PLATDATA)
+#if CONFIG_IS_ENABLED(OF_REAL)
 static int davinci_ofdata_to_platadata(struct udevice *bus)
 {
 	struct davinci_spi_plat *plat = dev_get_plat(bus);
@@ -418,7 +418,7 @@ static const struct udevice_id davinci_spi_ids[] = {
 U_BOOT_DRIVER(davinci_spi) = {
 	.name = "davinci_spi",
 	.id = UCLASS_SPI,
-#if CONFIG_IS_ENABLED(OF_CONTROL) && !CONFIG_IS_ENABLED(OF_PLATDATA)
+#if CONFIG_IS_ENABLED(OF_REAL)
 	.of_match = davinci_spi_ids,
 	.of_to_plat = davinci_ofdata_to_platadata,
 	.plat_auto	= sizeof(struct davinci_spi_plat),

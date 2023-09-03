@@ -62,23 +62,21 @@ static void announce_and_cleanup(int fake)
 	cleanup_before_linux();
 }
 
-static void boot_prep_linux(bootm_headers_t *images)
+static void boot_prep_linux(struct bootm_headers *images)
 {
-	if (IMAGE_ENABLE_OF_LIBFDT && images->ft_len) {
-#ifdef CONFIG_OF_LIBFDT
+	if (CONFIG_IS_ENABLED(OF_LIBFDT) && IS_ENABLED(CONFIG_LMB) && images->ft_len) {
 		debug("using: FDT\n");
 		if (image_setup_linux(images)) {
 			printf("FDT creation failed! hanging...");
 			hang();
 		}
-#endif
 	} else {
 		printf("Device tree not found or missing FDT support\n");
 		hang();
 	}
 }
 
-static void boot_jump_linux(bootm_headers_t *images, int flag)
+static void boot_jump_linux(struct bootm_headers *images, int flag)
 {
 	void (*kernel)(ulong hart, void *dtb);
 	int fake = (flag & BOOTM_STATE_OS_FAKE_GO);
@@ -96,7 +94,7 @@ static void boot_jump_linux(bootm_headers_t *images, int flag)
 	announce_and_cleanup(fake);
 
 	if (!fake) {
-		if (IMAGE_ENABLE_OF_LIBFDT && images->ft_len) {
+		if (CONFIG_IS_ENABLED(OF_LIBFDT) && images->ft_len) {
 #ifdef CONFIG_SMP
 			ret = smp_call_function(images->ep,
 						(ulong)images->ft_addr, 0, 0);
@@ -109,7 +107,7 @@ static void boot_jump_linux(bootm_headers_t *images, int flag)
 }
 
 int do_bootm_linux(int flag, int argc, char *const argv[],
-		   bootm_headers_t *images)
+		   struct bootm_headers *images)
 {
 	/* No need for those on RISC-V */
 	if (flag & BOOTM_STATE_OS_BD_T || flag & BOOTM_STATE_OS_CMDLINE)
@@ -131,7 +129,20 @@ int do_bootm_linux(int flag, int argc, char *const argv[],
 }
 
 int do_bootm_vxworks(int flag, int argc, char *const argv[],
-		     bootm_headers_t *images)
+		     struct bootm_headers *images)
 {
 	return do_bootm_linux(flag, argc, argv, images);
+}
+
+static ulong get_sp(void)
+{
+	ulong ret;
+
+	asm("mv %0, sp" : "=r"(ret) : );
+	return ret;
+}
+
+void arch_lmb_reserve(struct lmb *lmb)
+{
+	arch_lmb_reserve_generic(lmb, get_sp(), gd->ram_top, 4096);
 }

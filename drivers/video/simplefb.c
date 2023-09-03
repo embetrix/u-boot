@@ -43,15 +43,29 @@ static int simple_video_probe(struct udevice *dev)
 
 	uc_priv->xsize = fdtdec_get_uint(blob, node, "width", 0);
 	uc_priv->ysize = fdtdec_get_uint(blob, node, "height", 0);
-	uc_priv->rot = 0;
+	uc_priv->rot = fdtdec_get_uint(blob, node, "rot", 0);
+	if (uc_priv->rot > 3) {
+		log_debug("%s: invalid rot\n", __func__);
+		return log_msg_ret("rot", -EINVAL);
+	}
 
 	format = fdt_getprop(blob, node, "format", NULL);
 	debug("%s: %dx%d@%s\n", __func__, uc_priv->xsize, uc_priv->ysize, format);
 
 	if (strcmp(format, "r5g6b5") == 0) {
 		uc_priv->bpix = VIDEO_BPP16;
-	} else if (strcmp(format, "a8b8g8r8") == 0) {
+	} else if (strcmp(format, "a8b8g8r8") == 0 ||
+		   strcmp(format, "x8b8g8r8") == 0) {
 		uc_priv->bpix = VIDEO_BPP32;
+		uc_priv->format = VIDEO_X8B8G8R8;
+	} else if (strcmp(format, "a8r8g8b8") == 0 ||
+		   strcmp(format, "x8r8g8b8") == 0) {
+		uc_priv->bpix = VIDEO_BPP32;
+		uc_priv->format = VIDEO_X8R8G8B8;
+	} else if (strcmp(format, "a2r10g10b10") == 0 ||
+		   strcmp(format, "x2r10g10b10") == 0) {
+		uc_priv->bpix = VIDEO_BPP32;
+		uc_priv->format = VIDEO_X2R10G10B10;
 	} else {
 		printf("%s: invalid format: %s\n", __func__, format);
 		return -EINVAL;

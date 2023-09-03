@@ -85,7 +85,7 @@ struct sdram_rk3399_ops {
 	int (*data_training_first)(struct dram_info *dram, u32 channel, u8 rank,
 				   struct rk3399_sdram_params *sdram);
 	int (*set_rate_index)(struct dram_info *dram,
-			      struct rk3399_sdram_params *params);
+			      struct rk3399_sdram_params *params, u32 ctl_fn);
 	void (*modify_param)(const struct chan_info *chan,
 			     struct rk3399_sdram_params *params);
 	struct rk3399_sdram_params *
@@ -1625,7 +1625,7 @@ static void set_ddr_stride(struct rk3399_pmusgrf_regs *pmusgrf, u32 stride)
 	rk_clrsetreg(&pmusgrf->soc_con4, 0x1f << 10, stride << 10);
 }
 
-#if !defined(CONFIG_RAM_RK3399_LPDDR4)
+#if !defined(CONFIG_RAM_ROCKCHIP_LPDDR4)
 static int data_training_first(struct dram_info *dram, u32 channel, u8 rank,
 			       struct rk3399_sdram_params *params)
 {
@@ -1644,7 +1644,8 @@ static int data_training_first(struct dram_info *dram, u32 channel, u8 rank,
 }
 
 static int switch_to_phy_index1(struct dram_info *dram,
-				struct rk3399_sdram_params *params)
+				struct rk3399_sdram_params *params,
+				u32 unused)
 {
 	u32 channel;
 	u32 *denali_phy;
@@ -2539,27 +2540,25 @@ static int lpddr4_set_ctl(struct dram_info *dram,
 }
 
 static int lpddr4_set_rate(struct dram_info *dram,
-			   struct rk3399_sdram_params *params)
+			    struct rk3399_sdram_params *params,
+			    u32 ctl_fn)
 {
-	u32 ctl_fn;
 	u32 phy_fn;
 
-	for (ctl_fn = 0; ctl_fn < 2; ctl_fn++) {
-		phy_fn = lpddr4_get_phy_fn(params, ctl_fn);
+	phy_fn = lpddr4_get_phy_fn(params, ctl_fn);
 
-		lpddr4_set_phy(dram, params, phy_fn, &dfs_cfgs_lpddr4[ctl_fn]);
-		lpddr4_set_ctl(dram, params, ctl_fn,
-			       dfs_cfgs_lpddr4[ctl_fn].base.ddr_freq);
+	lpddr4_set_phy(dram, params, phy_fn, &dfs_cfgs_lpddr4[ctl_fn]);
+	lpddr4_set_ctl(dram, params, ctl_fn,
+		       dfs_cfgs_lpddr4[ctl_fn].base.ddr_freq);
 
-		if (IS_ENABLED(CONFIG_RAM_ROCKCHIP_DEBUG))
-			printf("%s: change freq to %d mhz %d, %d\n", __func__,
-			       dfs_cfgs_lpddr4[ctl_fn].base.ddr_freq,
-			       ctl_fn, phy_fn);
-	}
+	if (IS_ENABLED(CONFIG_RAM_ROCKCHIP_DEBUG))
+		printf("%s: change freq to %dMHz %d, %d\n", __func__,
+		       dfs_cfgs_lpddr4[ctl_fn].base.ddr_freq / MHz,
+		       ctl_fn, phy_fn);
 
 	return 0;
 }
-#endif /* CONFIG_RAM_RK3399_LPDDR4 */
+#endif /* CONFIG_RAM_ROCKCHIP_LPDDR4 */
 
 /* CS0,n=1
  * CS1,n=2
@@ -2749,6 +2748,8 @@ static u64 dram_detect_cap(struct dram_info *dram,
 
 	/* detect cs1 row */
 	sdram_detect_cs1_row(cap_info, params->base.dramtype);
+
+	sdram_detect_high_row(cap_info);
 
 	/* detect die bw */
 	sdram_detect_dbw(cap_info, params->base.dramtype);
@@ -2955,6 +2956,12 @@ static int sdram_init(struct dram_info *dram,
 		params->ch[ch].cap_info.rank = rank;
 	}
 
+#if defined(CONFIG_RAM_ROCKCHIP_LPDDR4)
+	/* LPDDR4 needs to be trained at 400MHz */
+	lpddr4_set_rate(dram, params, 0);
+	params->base.ddr_freq = dfs_cfgs_lpddr4[0].base.ddr_freq / MHz;
+#endif
+
 	params->base.num_channels = 0;
 	for (channel = 0; channel < 2; channel++) {
 		const struct chan_info *chan = &dram->chan[channel];
@@ -2964,8 +2971,6 @@ static int sdram_init(struct dram_info *dram,
 		if (cap_info->rank == 0) {
 			clear_channel_params(params, 1);
 			continue;
-		} else {
-			params->base.num_channels++;
 		}
 
 		if (IS_ENABLED(CONFIG_RAM_ROCKCHIP_DEBUG)) {
@@ -2983,7 +2988,7 @@ static int sdram_init(struct dram_info *dram,
 			continue;
 		}
 
-		sdram_print_ddr_info(cap_info, &params->base);
+		sdram_print_ddr_info(cap_info, &params->base, 0);
 		set_memory_map(chan, channel, params);
 		cap_info->ddrconfig =
 			calculate_ddrconfig(params, channel);
@@ -2991,6 +2996,8 @@ static int sdram_init(struct dram_info *dram,
 			printf("no ddrconfig find, Cap not support!\n");
 			continue;
 		}
+
+		params->base.num_channels++;
 		set_ddrconfig(chan, params, channel, cap_info->ddrconfig);
 		set_cap_relate_config(chan, params, channel);
 	}
@@ -3005,7 +3012,9 @@ static int sdram_init(struct dram_info *dram,
 	params->base.stride = calculate_stride(params);
 	dram_all_config(dram, params);
 
-	dram->ops->set_rate_index(dram, params);
+	ret = dram->ops->set_rate_index(dram, params, 1);
+	if (ret)
+		return ret;
 
 	debug("Finish SDRAM initialization...\n");
 	return 0;
@@ -3013,9 +3022,11 @@ static int sdram_init(struct dram_info *dram,
 
 static int rk3399_dmc_of_to_plat(struct udevice *dev)
 {
-#if !CONFIG_IS_ENABLED(OF_PLATDATA)
 	struct rockchip_dmc_plat *plat = dev_get_plat(dev);
 	int ret;
+
+	if (!CONFIG_IS_ENABLED(OF_REAL))
+		return 0;
 
 	ret = dev_read_u32_array(dev, "rockchip,sdram-params",
 				 (u32 *)&plat->sdram_params,
@@ -3029,7 +3040,6 @@ static int rk3399_dmc_of_to_plat(struct udevice *dev)
 	if (ret)
 		printf("%s: regmap failed %d\n", __func__, ret);
 
-#endif
 	return 0;
 }
 
@@ -3040,7 +3050,7 @@ static int conv_of_plat(struct udevice *dev)
 	struct dtd_rockchip_rk3399_dmc *dtplat = &plat->dtplat;
 	int ret;
 
-	ret = regmap_init_mem_plat(dev, dtplat->reg,
+	ret = regmap_init_mem_plat(dev, dtplat->reg, sizeof(dtplat->reg[0]),
 				   ARRAY_SIZE(dtplat->reg) / 2, &plat->map);
 	if (ret)
 		return ret;
@@ -3050,7 +3060,7 @@ static int conv_of_plat(struct udevice *dev)
 #endif
 
 static const struct sdram_rk3399_ops rk3399_ops = {
-#if !defined(CONFIG_RAM_RK3399_LPDDR4)
+#if !defined(CONFIG_RAM_ROCKCHIP_LPDDR4)
 	.data_training_first = data_training_first,
 	.set_rate_index = switch_to_phy_index1,
 	.modify_param = modify_param,
@@ -3068,7 +3078,7 @@ static int rk3399_dmc_init(struct udevice *dev)
 	struct dram_info *priv = dev_get_priv(dev);
 	struct rockchip_dmc_plat *plat = dev_get_plat(dev);
 	int ret;
-#if !CONFIG_IS_ENABLED(OF_PLATDATA)
+#if CONFIG_IS_ENABLED(OF_REAL)
 	struct rk3399_sdram_params *params = &plat->sdram_params;
 #else
 	struct dtd_rockchip_rk3399_dmc *dtplat = &plat->dtplat;
@@ -3106,7 +3116,7 @@ static int rk3399_dmc_init(struct udevice *dev)
 	      priv->cic, priv->pmugrf, priv->pmusgrf, priv->pmucru, priv->pmu);
 
 #if CONFIG_IS_ENABLED(OF_PLATDATA)
-	ret = clk_get_by_driver_info(dev, dtplat->clocks, &priv->ddr_clk);
+	ret = clk_get_by_phandle(dev, dtplat->clocks, &priv->ddr_clk);
 #else
 	ret = clk_get_by_index(dev, 0, &priv->ddr_clk);
 #endif
@@ -3142,7 +3152,7 @@ static int rk3399_dmc_probe(struct udevice *dev)
 
 	priv->pmugrf = syscon_get_first_range(ROCKCHIP_SYSCON_PMUGRF);
 	debug("%s: pmugrf = %p\n", __func__, priv->pmugrf);
-	priv->info.base = CONFIG_SYS_SDRAM_BASE;
+	priv->info.base = CFG_SYS_SDRAM_BASE;
 	priv->info.size =
 		rockchip_sdram_size((phys_addr_t)&priv->pmugrf->os_reg2);
 #endif

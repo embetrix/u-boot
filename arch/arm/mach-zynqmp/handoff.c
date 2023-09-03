@@ -2,13 +2,14 @@
 /*
  * Copyright 2016 - 2017 Xilinx, Inc.
  *
- * Michal Simek <michal.simek@xilinx.com>
+ * Michal Simek <michal.simek@amd.com>
  */
 
 #include <common.h>
 #include <asm/io.h>
 #include <asm/arch/hardware.h>
 #include <asm/arch/sys_proto.h>
+#include <spl.h>
 
 /*
  * atfhandoffparams
@@ -79,7 +80,10 @@ struct bl31_params *bl2_plat_get_bl31_params(uintptr_t bl32_entry,
 	atfhandoffparams->magic[2] = 'N';
 	atfhandoffparams->magic[3] = 'X';
 
+	debug("Creating handoff:\n");
+
 	if (bl32_entry) {
+		debug(" to BL32 at 0x%x EL-1, Secure\n", (u32)bl32_entry);
 		atfhandoffparams->partition[index].entry_point = bl32_entry;
 		atfhandoffparams->partition[index].flags = FSBL_FLAGS_EL1 << FSBL_FLAGS_EL_SHIFT |
 							   FSBL_FLAGS_SECURE << FSBL_FLAGS_TZ_SHIFT;
@@ -87,6 +91,7 @@ struct bl31_params *bl2_plat_get_bl31_params(uintptr_t bl32_entry,
 	}
 
 	if (bl33_entry) {
+		debug(" to BL33 at 0x%x EL-2\n", (u32)bl33_entry);
 		atfhandoffparams->partition[index].entry_point = bl33_entry;
 		atfhandoffparams->partition[index].flags = FSBL_FLAGS_EL2 <<
 							   FSBL_FLAGS_EL_SHIFT;

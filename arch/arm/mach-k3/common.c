@@ -19,7 +19,6 @@
 #include <asm/cache.h>
 #include <linux/soc/ti/ti_sci_protocol.h>
 #include <fdt_support.h>
-#include <asm/arch/sys_proto.h>
 #include <asm/hardware.h>
 #include <asm/io.h>
 #include <fs_loader.h>
@@ -156,12 +155,14 @@ void init_env(void)
 #endif
 }
 
-#ifdef CONFIG_FS_LOADER
 int load_firmware(char *name_fw, char *name_loadaddr, u32 *loadaddr)
 {
 	struct udevice *fsdev;
 	char *name = NULL;
 	int size = 0;
+
+	if (!IS_ENABLED(CONFIG_FS_LOADER))
+		return 0;
 
 	*loadaddr = 0;
 #ifdef CONFIG_SPL_ENV_SUPPORT
@@ -179,26 +180,53 @@ int load_firmware(char *name_fw, char *name_loadaddr, u32 *loadaddr)
 	if (!*loadaddr)
 		return 0;
 
-	if (!uclass_get_device(UCLASS_FS_FIRMWARE_LOADER, 0, &fsdev)) {
+	if (!get_fs_loader(&fsdev)) {
 		size = request_firmware_into_buf(fsdev, name, (void *)*loadaddr,
 						 0, 0);
 	}
 
 	return size;
 }
-#else
-int load_firmware(char *name_fw, char *name_loadaddr, u32 *loadaddr)
+
+void release_resources_for_core_shutdown(void)
 {
-	return 0;
+	struct ti_sci_handle *ti_sci = get_ti_sci_handle();
+	struct ti_sci_dev_ops *dev_ops = &ti_sci->ops.dev_ops;
+	struct ti_sci_proc_ops *proc_ops = &ti_sci->ops.proc_ops;
+	int ret;
+	u32 i;
+
+	/* Iterate through list of devices to put (shutdown) */
+	for (i = 0; i < ARRAY_SIZE(put_device_ids); i++) {
+		u32 id = put_device_ids[i];
+
+		ret = dev_ops->put_device(ti_sci, id);
+		if (ret)
+			panic("Failed to put device %u (%d)\n", id, ret);
+	}
+
+	/* Iterate through list of cores to put (shutdown) */
+	for (i = 0; i < ARRAY_SIZE(put_core_ids); i++) {
+		u32 id = put_core_ids[i];
+
+		/*
+		 * Queue up the core shutdown request. Note that this call
+		 * needs to be followed up by an actual invocation of an WFE
+		 * or WFI CPU instruction.
+		 */
+		ret = proc_ops->proc_shutdown_no_wait(ti_sci, id);
+		if (ret)
+			panic("Failed sending core %u shutdown message (%d)\n",
+			      id, ret);
+	}
 }
-#endif
 
 void __noreturn jump_to_image_no_args(struct spl_image_info *spl_image)
 {
 	typedef void __noreturn (*image_entry_noargs_t)(void);
 	struct ti_sci_handle *ti_sci = get_ti_sci_handle();
 	u32 loadaddr = 0;
-	int ret, size = 0;
+	int ret, size = 0, shut_cpu = 0;
 
 	/* Release all the exclusive devices held by SPL before starting ATF */
 	ti_sci->ops.dev_ops.release_exclusive_devices(ti_sci);
@@ -226,19 +254,35 @@ void __noreturn jump_to_image_no_args(struct spl_image_info *spl_image)
 	if (ret)
 		panic("%s: ATF failed to load on rproc (%d)\n", __func__, ret);
 
-	/* Add an extra newline to differentiate the ATF logs from SPL */
-	printf("Starting ATF on ARM64 core...\n\n");
+#if (CONFIG_IS_ENABLED(FIT_IMAGE_POST_PROCESS) && IS_ENABLED(CONFIG_SYS_K3_SPL_ATF))
+	/* Authenticate ATF */
+	void *image_addr = (void *)fit_image_info[IMAGE_ID_ATF].image_start;
 
-	ret = rproc_start(1);
-	if (ret)
-		panic("%s: ATF failed to start on rproc (%d)\n", __func__, ret);
+	debug("%s: Authenticating image: addr=%lx, size=%ld, os=%s\n", __func__,
+	      fit_image_info[IMAGE_ID_ATF].image_start,
+	      fit_image_info[IMAGE_ID_ATF].image_len,
+	      image_os_match[IMAGE_ID_ATF]);
+
+	ti_secure_image_post_process(&image_addr,
+				     (size_t *)&fit_image_info[IMAGE_ID_ATF].image_len);
+
+	/* Authenticate OPTEE */
+	image_addr = (void *)fit_image_info[IMAGE_ID_OPTEE].image_start;
+
+	debug("%s: Authenticating image: addr=%lx, size=%ld, os=%s\n", __func__,
+	      fit_image_info[IMAGE_ID_OPTEE].image_start,
+	      fit_image_info[IMAGE_ID_OPTEE].image_len,
+	      image_os_match[IMAGE_ID_OPTEE]);
+
+	ti_secure_image_post_process(&image_addr,
+				     (size_t *)&fit_image_info[IMAGE_ID_OPTEE].image_len);
+
+#endif
+
 	if (!fit_image_info[IMAGE_ID_DM_FW].image_len &&
 	    !(size > 0 && valid_elf_image(loadaddr))) {
-		debug("Shutting down...\n");
-		release_resources_for_core_shutdown();
-
-		while (1)
-			asm volatile("wfe");
+		shut_cpu = 1;
+		goto start_arm64;
 	}
 
 	if (!fit_image_info[IMAGE_ID_DM_FW].image_start) {
@@ -251,6 +295,21 @@ void __noreturn jump_to_image_no_args(struct spl_image_info *spl_image)
 
 	debug("%s: jumping to address %x\n", __func__, loadaddr);
 
+start_arm64:
+	/* Add an extra newline to differentiate the ATF logs from SPL */
+	printf("Starting ATF on ARM64 core...\n\n");
+
+	ret = rproc_start(1);
+	if (ret)
+		panic("%s: ATF failed to start on rproc (%d)\n", __func__, ret);
+
+	if (shut_cpu) {
+		debug("Shutting down...\n");
+		release_resources_for_core_shutdown();
+
+		while (1)
+			asm volatile("wfe");
+	}
 	image_entry_noargs_t image_entry = (image_entry_noargs_t)loadaddr;
 
 	image_entry();
@@ -281,106 +340,21 @@ void board_fit_image_post_process(const void *fit, int node, void **p_image,
 			break;
 		}
 	}
+	/*
+	 * Only DM and the DTBs are being authenticated here,
+	 * rest will be authenticated when A72 cluster is up
+	 */
+	if ((i != IMAGE_ID_ATF) && (i != IMAGE_ID_OPTEE))
 #endif
-
-#if IS_ENABLED(CONFIG_TI_SECURE_DEVICE)
-	ti_secure_image_post_process(p_image, p_size);
+	{
+		ti_secure_image_check_binary(p_image, p_size);
+		ti_secure_image_post_process(p_image, p_size);
+	}
+#if IS_ENABLED(CONFIG_SYS_K3_SPL_ATF)
+	else
+		ti_secure_image_check_binary(p_image, p_size);
 #endif
 }
-#endif
-
-#if defined(CONFIG_OF_LIBFDT)
-int fdt_fixup_msmc_ram(void *blob, char *parent_path, char *node_name)
-{
-	u64 msmc_start = 0, msmc_end = 0, msmc_size, reg[2];
-	struct ti_sci_handle *ti_sci = get_ti_sci_handle();
-	int ret, node, subnode, len, prev_node;
-	u32 range[4], addr, size;
-	const fdt32_t *sub_reg;
-
-	ti_sci->ops.core_ops.query_msmc(ti_sci, &msmc_start, &msmc_end);
-	msmc_size = msmc_end - msmc_start + 1;
-	debug("%s: msmc_start = 0x%llx, msmc_size = 0x%llx\n", __func__,
-	      msmc_start, msmc_size);
-
-	/* find or create "msmc_sram node */
-	ret = fdt_path_offset(blob, parent_path);
-	if (ret < 0)
-		return ret;
-
-	node = fdt_find_or_add_subnode(blob, ret, node_name);
-	if (node < 0)
-		return node;
-
-	ret = fdt_setprop_string(blob, node, "compatible", "mmio-sram");
-	if (ret < 0)
-		return ret;
-
-	reg[0] = cpu_to_fdt64(msmc_start);
-	reg[1] = cpu_to_fdt64(msmc_size);
-	ret = fdt_setprop(blob, node, "reg", reg, sizeof(reg));
-	if (ret < 0)
-		return ret;
-
-	fdt_setprop_cell(blob, node, "#address-cells", 1);
-	fdt_setprop_cell(blob, node, "#size-cells", 1);
-
-	range[0] = 0;
-	range[1] = cpu_to_fdt32(msmc_start >> 32);
-	range[2] = cpu_to_fdt32(msmc_start & 0xffffffff);
-	range[3] = cpu_to_fdt32(msmc_size);
-	ret = fdt_setprop(blob, node, "ranges", range, sizeof(range));
-	if (ret < 0)
-		return ret;
-
-	subnode = fdt_first_subnode(blob, node);
-	prev_node = 0;
-
-	/* Look for invalid subnodes and delete them */
-	while (subnode >= 0) {
-		sub_reg = fdt_getprop(blob, subnode, "reg", &len);
-		addr = fdt_read_number(sub_reg, 1);
-		sub_reg++;
-		size = fdt_read_number(sub_reg, 1);
-		debug("%s: subnode = %d, addr = 0x%x. size = 0x%x\n", __func__,
-		      subnode, addr, size);
-		if (addr + size > msmc_size ||
-		    !strncmp(fdt_get_name(blob, subnode, &len), "sysfw", 5) ||
-		    !strncmp(fdt_get_name(blob, subnode, &len), "l3cache", 7)) {
-			fdt_del_node(blob, subnode);
-			debug("%s: deleting subnode %d\n", __func__, subnode);
-			if (!prev_node)
-				subnode = fdt_first_subnode(blob, node);
-			else
-				subnode = fdt_next_subnode(blob, prev_node);
-		} else {
-			prev_node = subnode;
-			subnode = fdt_next_subnode(blob, prev_node);
-		}
-	}
-
-	return 0;
-}
-
-int fdt_disable_node(void *blob, char *node_path)
-{
-	int offs;
-	int ret;
-
-	offs = fdt_path_offset(blob, node_path);
-	if (offs < 0) {
-		printf("Node %s not found.\n", node_path);
-		return offs;
-	}
-	ret = fdt_setprop_string(blob, offs, "status", "disabled");
-	if (ret < 0) {
-		printf("Could not add status property to node %s: %s\n",
-		       node_path, fdt_strerror(ret));
-		return ret;
-	}
-	return 0;
-}
-
 #endif
 
 #ifndef CONFIG_SYSRESET
@@ -389,7 +363,54 @@ void reset_cpu(void)
 }
 #endif
 
+enum k3_device_type get_device_type(void)
+{
+	u32 sys_status = readl(K3_SEC_MGR_SYS_STATUS);
+
+	u32 sys_dev_type = (sys_status & SYS_STATUS_DEV_TYPE_MASK) >>
+			SYS_STATUS_DEV_TYPE_SHIFT;
+
+	u32 sys_sub_type = (sys_status & SYS_STATUS_SUB_TYPE_MASK) >>
+			SYS_STATUS_SUB_TYPE_SHIFT;
+
+	switch (sys_dev_type) {
+	case SYS_STATUS_DEV_TYPE_GP:
+		return K3_DEVICE_TYPE_GP;
+	case SYS_STATUS_DEV_TYPE_TEST:
+		return K3_DEVICE_TYPE_TEST;
+	case SYS_STATUS_DEV_TYPE_EMU:
+		return K3_DEVICE_TYPE_EMU;
+	case SYS_STATUS_DEV_TYPE_HS:
+		if (sys_sub_type == SYS_STATUS_SUB_TYPE_VAL_FS)
+			return K3_DEVICE_TYPE_HS_FS;
+		else
+			return K3_DEVICE_TYPE_HS_SE;
+	default:
+		return K3_DEVICE_TYPE_BAD;
+	}
+}
+
 #if defined(CONFIG_DISPLAY_CPUINFO)
+static const char *get_device_type_name(void)
+{
+	enum k3_device_type type = get_device_type();
+
+	switch (type) {
+	case K3_DEVICE_TYPE_GP:
+		return "GP";
+	case K3_DEVICE_TYPE_TEST:
+		return "TEST";
+	case K3_DEVICE_TYPE_EMU:
+		return "EMU";
+	case K3_DEVICE_TYPE_HS_FS:
+		return "HS-FS";
+	case K3_DEVICE_TYPE_HS_SE:
+		return "HS-SE";
+	default:
+		return "BAD";
+	}
+}
+
 int print_cpuinfo(void)
 {
 	struct udevice *soc;
@@ -411,35 +432,17 @@ int print_cpuinfo(void)
 
 	ret = soc_get_revision(soc, name, 64);
 	if (!ret) {
-		printf("%s\n", name);
+		printf("%s ", name);
 	}
+
+	printf("%s\n", get_device_type_name());
 
 	return 0;
 }
 #endif
 
-bool soc_is_j721e(void)
-{
-	u32 soc;
-
-	soc = (readl(CTRLMMR_WKUP_JTAG_ID) &
-		JTAG_ID_PARTNO_MASK) >> JTAG_ID_PARTNO_SHIFT;
-
-	return soc == J721E;
-}
-
-bool soc_is_j7200(void)
-{
-	u32 soc;
-
-	soc = (readl(CTRLMMR_WKUP_JTAG_ID) &
-		JTAG_ID_PARTNO_MASK) >> JTAG_ID_PARTNO_SHIFT;
-
-	return soc == J7200;
-}
-
 #ifdef CONFIG_ARM64
-void board_prep_linux(bootm_headers_t *images)
+void board_prep_linux(struct bootm_headers *images)
 {
 	debug("Linux kernel Image start = 0x%lx end = 0x%lx\n",
 	      images->os.start, images->os.end);
@@ -474,42 +477,56 @@ void disable_linefill_optimization(void)
 }
 #endif
 
-void remove_fwl_configs(struct fwl_data *fwl_data, size_t fwl_data_size)
+static void remove_fwl_regions(struct fwl_data fwl_data, size_t num_regions,
+			       enum k3_firewall_region_type fwl_type)
 {
-	struct ti_sci_msg_fwl_region region;
 	struct ti_sci_fwl_ops *fwl_ops;
 	struct ti_sci_handle *ti_sci;
-	size_t i, j;
+	struct ti_sci_msg_fwl_region region;
+	size_t j;
 
 	ti_sci = get_ti_sci_handle();
 	fwl_ops = &ti_sci->ops.fwl_ops;
-	for (i = 0; i < fwl_data_size; i++) {
-		for (j = 0; j <  fwl_data[i].regions; j++) {
-			region.fwl_id = fwl_data[i].fwl_id;
-			region.region = j;
-			region.n_permission_regs = 3;
 
-			fwl_ops->get_fwl_region(ti_sci, &region);
+	for (j = 0; j < fwl_data.regions; j++) {
+		region.fwl_id = fwl_data.fwl_id;
+		region.region = j;
+		region.n_permission_regs = 3;
 
-			if (region.control != 0) {
-				pr_debug("Attempting to disable firewall %5d (%25s)\n",
-					 region.fwl_id, fwl_data[i].name);
-				region.control = 0;
+		fwl_ops->get_fwl_region(ti_sci, &region);
 
-				if (fwl_ops->set_fwl_region(ti_sci, &region))
-					pr_err("Could not disable firewall %5d (%25s)\n",
-					       region.fwl_id, fwl_data[i].name);
-			}
+		/* Don't disable the background regions */
+		if (region.control != 0 &&
+		    ((region.control >> K3_FIREWALL_BACKGROUND_BIT) & 1) == fwl_type) {
+			pr_debug("Attempting to disable firewall %5d (%25s)\n",
+				 region.fwl_id, fwl_data.name);
+			region.control = 0;
+
+			if (fwl_ops->set_fwl_region(ti_sci, &region))
+				pr_err("Could not disable firewall %5d (%25s)\n",
+				       region.fwl_id, fwl_data.name);
 		}
+	}
+}
+
+void remove_fwl_configs(struct fwl_data *fwl_data, size_t fwl_data_size)
+{
+	size_t i;
+
+	for (i = 0; i < fwl_data_size; i++) {
+		remove_fwl_regions(fwl_data[i], fwl_data[i].regions,
+				   K3_FIREWALL_REGION_FOREGROUND);
+		remove_fwl_regions(fwl_data[i], fwl_data[i].regions,
+				   K3_FIREWALL_REGION_BACKGROUND);
 	}
 }
 
 void spl_enable_dcache(void)
 {
 #if !(defined(CONFIG_SYS_ICACHE_OFF) && defined(CONFIG_SYS_DCACHE_OFF))
-	phys_addr_t ram_top = CONFIG_SYS_SDRAM_BASE;
+	phys_addr_t ram_top = CFG_SYS_SDRAM_BASE;
 
-	dram_init_banksize();
+	dram_init();
 
 	/* reserve TLB table */
 	gd->arch.tlb_size = PGTABLE_SIZE;
@@ -520,8 +537,10 @@ void spl_enable_dcache(void)
 		ram_top = (phys_addr_t) 0x100000000;
 
 	gd->arch.tlb_addr = ram_top - gd->arch.tlb_size;
+	gd->arch.tlb_addr &= ~(0x10000 - 1);
 	debug("TLB table from %08lx to %08lx\n", gd->arch.tlb_addr,
 	      gd->arch.tlb_addr + gd->arch.tlb_size);
+	gd->relocaddr = gd->arch.tlb_addr;
 
 	dcache_enable();
 #endif
@@ -538,3 +557,33 @@ void spl_board_prepare_for_linux(void)
 	dcache_disable();
 }
 #endif
+
+int misc_init_r(void)
+{
+	if (IS_ENABLED(CONFIG_TI_AM65_CPSW_NUSS)) {
+		struct udevice *dev;
+		int ret;
+
+		ret = uclass_get_device_by_driver(UCLASS_MISC,
+						  DM_DRIVER_GET(am65_cpsw_nuss),
+						  &dev);
+		if (ret)
+			printf("Failed to probe am65_cpsw_nuss driver\n");
+	}
+
+	/* Default FIT boot on HS-SE devices */
+	if (get_device_type() == K3_DEVICE_TYPE_HS_SE)
+		env_set("boot_fit", "1");
+
+	return 0;
+}
+
+/**
+ * do_board_detect() - Detect board description
+ *
+ * Function to detect board description. This is expected to be
+ * overridden in the SoC family board file where desired.
+ */
+void __weak do_board_detect(void)
+{
+}

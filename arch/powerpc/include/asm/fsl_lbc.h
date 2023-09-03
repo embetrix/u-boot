@@ -294,8 +294,8 @@ void lbc_sdram_init(void);
 #define LBCR_EPAR_SHIFT			16
 #define LBCR_BMT			0x0000FF00
 #define LBCR_BMT_SHIFT			8
-#define LBCR_BMTPS	 		0x0000000F
-#define LBCR_BMTPS_SHIFT 		0
+#define LBCR_BMTPS			0x0000000F
+#define LBCR_BMTPS_SHIFT		0
 
 /* LCRR - Clock Ratio Register
  */
@@ -469,7 +469,7 @@ extern void print_lbc_regs(void);
 extern void init_early_memctl_regs(void);
 extern void upmconfig(uint upm, uint *table, uint size);
 
-#define LBC_BASE_ADDR ((fsl_lbc_t *)CONFIG_SYS_LBC_ADDR)
+#define LBC_BASE_ADDR ((fsl_lbc_t *)CFG_SYS_LBC_ADDR)
 #define get_lbc_lcrr() (in_be32(&(LBC_BASE_ADDR)->lcrr))
 #define get_lbc_lbcr() (in_be32(&(LBC_BASE_ADDR)->lbcr))
 #define get_lbc_br(i) (in_be32(&(LBC_BASE_ADDR)->bank[i].br))

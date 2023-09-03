@@ -45,7 +45,7 @@ struct rockchip_spi_plat {
 	struct dtd_rockchip_rk3288_spi of_plat;
 #endif
 	s32 frequency;		/* Default clock frequency, -1 for none */
-	fdt_addr_t base;
+	uintptr_t base;
 	uint deactivate_delay_us;	/* Delay to wait after deactivate */
 	uint activate_delay_us;		/* Delay to wait after activate */
 };
@@ -183,7 +183,7 @@ static int conv_of_plat(struct udevice *dev)
 
 	plat->base = dtplat->reg[0];
 	plat->frequency = 20000000;
-	ret = clk_get_by_driver_info(dev, dtplat->clocks, &priv->clk);
+	ret = clk_get_by_phandle(dev, dtplat->clocks, &priv->clk);
 	if (ret < 0)
 		return ret;
 
@@ -193,31 +193,31 @@ static int conv_of_plat(struct udevice *dev)
 
 static int rockchip_spi_of_to_plat(struct udevice *bus)
 {
-#if !CONFIG_IS_ENABLED(OF_PLATDATA)
 	struct rockchip_spi_plat *plat = dev_get_plat(bus);
 	struct rockchip_spi_priv *priv = dev_get_priv(bus);
 	int ret;
 
-	plat->base = dev_read_addr(bus);
+	if (CONFIG_IS_ENABLED(OF_REAL)) {
+		plat->base = dev_read_addr(bus);
 
-	ret = clk_get_by_index(bus, 0, &priv->clk);
-	if (ret < 0) {
-		debug("%s: Could not get clock for %s: %d\n", __func__,
-		      bus->name, ret);
-		return ret;
+		ret = clk_get_by_index(bus, 0, &priv->clk);
+		if (ret < 0) {
+			debug("%s: Could not get clock for %s: %d\n", __func__,
+			      bus->name, ret);
+			return ret;
+		}
+
+		plat->frequency = dev_read_u32_default(bus, "spi-max-frequency",
+						       50000000);
+		plat->deactivate_delay_us =
+			dev_read_u32_default(bus, "spi-deactivate-delay", 0);
+		plat->activate_delay_us =
+			dev_read_u32_default(bus, "spi-activate-delay", 0);
+
+		debug("%s: base=%x, max-frequency=%d, deactivate_delay=%d\n",
+		      __func__, (uint)plat->base, plat->frequency,
+		      plat->deactivate_delay_us);
 	}
-
-	plat->frequency =
-		dev_read_u32_default(bus, "spi-max-frequency", 50000000);
-	plat->deactivate_delay_us =
-		dev_read_u32_default(bus, "spi-deactivate-delay", 0);
-	plat->activate_delay_us =
-		dev_read_u32_default(bus, "spi-activate-delay", 0);
-
-	debug("%s: base=%x, max-frequency=%d, deactivate_delay=%d\n",
-	      __func__, (uint)plat->base, plat->frequency,
-	      plat->deactivate_delay_us);
-#endif
 
 	return 0;
 }
@@ -485,7 +485,7 @@ static int rockchip_spi_xfer(struct udevice *dev, unsigned int bitlen,
 		/*
 		 * In case that there's a transmit-component, we need to wait
 		 * until the control goes idle before we can disable the SPI
-		 * control logic (as this will implictly flush the FIFOs).
+		 * control logic (as this will implicitly flush the FIFOs).
 		 */
 		if (out) {
 			ret = rkspi_wait_till_not_busy(regs);

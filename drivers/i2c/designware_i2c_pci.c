@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
  * (C) Copyright 2009
- * Vipin Kumar, ST Micoelectronics, vipin.kumar@st.com.
+ * Vipin Kumar, STMicroelectronics, vipin.kumar@st.com.
  * Copyright 2019 Google Inc
  */
 
@@ -59,7 +59,8 @@ static int designware_i2c_pci_of_to_plat(struct udevice *dev)
 		priv->regs = (struct i2c_regs *)dm_pci_read_bar32(dev, 0);
 	} else {
 		priv->regs = (struct i2c_regs *)
-			dm_pci_map_bar(dev, PCI_BASE_ADDRESS_0, PCI_REGION_MEM);
+			dm_pci_map_bar(dev, PCI_BASE_ADDRESS_0, 0, 0,
+				       PCI_REGION_TYPE, PCI_REGION_MEM);
 	}
 	if (!priv->regs)
 		return -EINVAL;
@@ -146,9 +147,7 @@ static int dw_i2c_acpi_fill_ssdt(const struct udevice *dev,
 {
 	struct dw_i2c_speed_config config;
 	char path[ACPI_PATH_MAX];
-	u32 speeds[4];
 	uint speed;
-	int size;
 	int ret;
 
 	/* If no device-tree node, ignore this since we assume it isn't used */
@@ -158,18 +157,6 @@ static int dw_i2c_acpi_fill_ssdt(const struct udevice *dev,
 	ret = acpi_device_path(dev, path, sizeof(path));
 	if (ret)
 		return log_msg_ret("path", ret);
-
-	size = dev_read_size(dev, "i2c,speeds");
-	if (size < 0)
-		return log_msg_ret("i2c,speeds", -EINVAL);
-
-	size /= sizeof(u32);
-	if (size > ARRAY_SIZE(speeds))
-		return log_msg_ret("array", -E2BIG);
-
-	ret = dev_read_u32_array(dev, "i2c,speeds", speeds, size);
-	if (ret)
-		return log_msg_ret("read", -E2BIG);
 
 	speed = dev_read_u32_default(dev, "clock-frequency", 100000);
 	acpigen_write_scope(ctx, path);

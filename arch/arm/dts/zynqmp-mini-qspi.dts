@@ -4,8 +4,8 @@
  *
  * (C) Copyright 2015 - 2020, Xilinx, Inc.
  *
- * Siva Durga Prasad <siva.durga.paladugu@xilinx.com>
- * Michal Simek <michal.simek@xilinx.com>
+ * Siva Durga Prasad <siva.durga.prasad.paladugu@amd.com>>
+ * Michal Simek <michal.simek@amd.com>
  */
 
 /dts-v1/;
@@ -33,7 +33,7 @@
 	dcc: dcc {
 		compatible = "arm,dcc";
 		status = "disabled";
-		u-boot,dm-pre-reloc;
+		bootph-all;
 	};
 
 	amba: amba {
@@ -68,7 +68,7 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 		reg = <0x0>;
-		spi-tx-bus-width = <1>;
+		spi-tx-bus-width = <4>;
 		spi-rx-bus-width = <4>;
 		spi-max-frequency = <40000000>;
 	};

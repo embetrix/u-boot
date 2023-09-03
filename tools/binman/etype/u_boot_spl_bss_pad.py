@@ -10,7 +10,7 @@
 from binman import elf
 from binman.entry import Entry
 from binman.etype.blob import Entry_blob
-from patman import tools
+from u_boot_pylib import tools
 
 class Entry_u_boot_spl_bss_pad(Entry_blob):
     """U-Boot SPL binary padded with a BSS region
@@ -36,9 +36,9 @@ class Entry_u_boot_spl_bss_pad(Entry_blob):
         super().__init__(section, etype, node)
 
     def ObtainContents(self):
-        fname = tools.GetInputFilename('spl/u-boot-spl')
+        fname = tools.get_input_filename('spl/u-boot-spl')
         bss_size = elf.GetSymbolAddress(fname, '__bss_size')
-        if not bss_size:
+        if bss_size is None:
             self.Raise('Expected __bss_size symbol in spl/u-boot-spl')
-        self.SetContents(tools.GetBytes(0, bss_size))
+        self.SetContents(tools.get_bytes(0, bss_size))
         return True

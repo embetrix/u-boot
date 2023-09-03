@@ -12,23 +12,35 @@
 #include <spl.h>
 #include <asm/io.h>
 #include <asm/arch/hardware.h>
-#include <asm/arch/sysfw-loader.h>
-#include <asm/arch/sys_proto.h>
+#include "sysfw-loader.h"
 #include "common.h"
-#include <asm/arch/sys_proto.h>
 #include <linux/soc/ti/ti_sci_protocol.h>
 #include <dm.h>
 #include <dm/uclass-internal.h>
 #include <dm/pinctrl.h>
 #include <mmc.h>
 #include <dm/root.h>
+#include <command.h>
 
-#if defined(CONFIG_SPL_BUILD)
+#define CTRLMMR_MCU_RST_CTRL			0x04518170
+
+#define CTRLMMR_MCU_RST_SRC                    (MCU_CTRL_MMR0_BASE + 0x18178)
+#define COLD_BOOT                              0
+#define SW_POR_MCU                             BIT(24)
+#define SW_POR_MAIN                            BIT(25)
 
 static void ctrl_mmr_unlock(void)
 {
 	/* Unlock all PADCFG_MMR1 module registers */
 	mmr_unlock(PADCFG_MMR1_BASE, 1);
+
+	/* Unlock all MCU_CTRL_MMR0 module registers */
+	mmr_unlock(MCU_CTRL_MMR0_BASE, 0);
+	mmr_unlock(MCU_CTRL_MMR0_BASE, 1);
+	mmr_unlock(MCU_CTRL_MMR0_BASE, 2);
+	mmr_unlock(MCU_CTRL_MMR0_BASE, 3);
+	mmr_unlock(MCU_CTRL_MMR0_BASE, 4);
+	mmr_unlock(MCU_CTRL_MMR0_BASE, 6);
 
 	/* Unlock all CTRL_MMR0 module registers */
 	mmr_unlock(CTRL_MMR0_BASE, 0);
@@ -37,6 +49,9 @@ static void ctrl_mmr_unlock(void)
 	mmr_unlock(CTRL_MMR0_BASE, 3);
 	mmr_unlock(CTRL_MMR0_BASE, 5);
 	mmr_unlock(CTRL_MMR0_BASE, 6);
+
+	/* Unlock all MCU_PADCFG_MMR1 module registers */
+	mmr_unlock(MCU_PADCFG_MMR1_BASE, 1);
 }
 
 /*
@@ -50,7 +65,7 @@ static struct rom_extended_boot_data bootdata __section(".data");
 static void store_boot_info_from_rom(void)
 {
 	bootindex = *(u32 *)(CONFIG_SYS_K3_BOOT_PARAM_TABLE_INDEX);
-	memcpy(&bootdata, (uintptr_t *)ROM_ENTENDED_BOOT_DATA_INFO,
+	memcpy(&bootdata, (uintptr_t *)ROM_EXTENDED_BOOT_DATA_INFO,
 	       sizeof(struct rom_extended_boot_data));
 }
 
@@ -89,8 +104,8 @@ void do_dt_magic(void)
 {
 	int ret, rescan;
 
-	if (IS_ENABLED(CONFIG_TI_I2C_BOARD_DETECT))
-		do_board_detect();
+	/* Perform board detection */
+	do_board_detect();
 
 	/*
 	 * Board detection has been done.
@@ -139,11 +154,23 @@ int fdtdec_board_setup(const void *fdt_blob)
 }
 #endif
 
+#if defined(CONFIG_ESM_K3)
+static void enable_mcu_esm_reset(void)
+{
+	/* Set CTRLMMR_MCU_RST_CTRL:MCU_ESM_ERROR_RST_EN_Z  to '0' (low active) */
+	u32 stat = readl(CTRLMMR_MCU_RST_CTRL);
+
+	stat &= 0xFFFDFFFF;
+	writel(stat, CTRLMMR_MCU_RST_CTRL);
+}
+#endif
+
 void board_init_f(ulong dummy)
 {
-#if defined(CONFIG_K3_LOAD_SYSFW) || defined(CONFIG_K3_AM64_DDRSS)
+#if defined(CONFIG_K3_LOAD_SYSFW) || defined(CONFIG_K3_AM64_DDRSS) || defined(CONFIG_ESM_K3)
 	struct udevice *dev;
 	int ret;
+	int rst_src;
 #endif
 
 #if defined(CONFIG_CPU_V7R)
@@ -162,8 +189,6 @@ void board_init_f(ulong dummy)
 	spl_early_init();
 
 	preloader_console_init();
-
-	do_dt_magic();
 
 #if defined(CONFIG_K3_LOAD_SYSFW)
 	/*
@@ -188,17 +213,66 @@ void board_init_f(ulong dummy)
 			k3_mmc_restart_clock);
 #endif
 
+#if defined(CONFIG_CPU_V7R)
+	/*
+	 * Errata ID i2331 CPSW: A device lockup can occur during the second
+	 * read of any CPSW subsystem register after any MAIN domain power on
+	 * reset (POR). A MAIN domain POR occurs using the hardware MCU_PORz
+	 * signal, or via software using CTRLMMR_RST_CTRL.SW_MAIN_POR or
+	 * CTRLMMR_MCU_RST_CTRL.SW_MAIN_POR. After these resets, the processor
+	 * and internal bus structures may get into a state which is only
+	 * recoverable with full device reset using MCU_PORz.
+	 * Workaround(s): To avoid the lockup, a warm reset should be issued
+	 * after a MAIN domain POR and before any access to the CPSW registers.
+	 * The warm reset realigns internal clocks and prevents the lockup from
+	 * happening.
+	 */
+	ret = uclass_first_device_err(UCLASS_SYSRESET, &dev);
+	if (ret)
+		printf("\n%s:uclass device error [%d]\n",__func__,ret);
+
+	rst_src = readl(CTRLMMR_MCU_RST_SRC);
+	if (rst_src == COLD_BOOT || rst_src & (SW_POR_MCU | SW_POR_MAIN)) {
+		printf("Resetting on cold boot to workaround ErrataID:i2331\n");
+		printf("Please resend tiboot3.bin in case of UART/DFU boot\n");
+		do_reset(NULL, 0, 0, NULL);
+	}
+#endif
+
 	/* Output System Firmware version info */
 	k3_sysfw_print_ver();
+
+	do_dt_magic();
+
+#if defined(CONFIG_ESM_K3)
+	/* Probe/configure ESM0 */
+	ret = uclass_get_device_by_name(UCLASS_MISC, "esm@420000", &dev);
+	if (ret)
+		printf("esm main init failed: %d\n", ret);
+
+	/* Probe/configure MCUESM */
+	ret = uclass_get_device_by_name(UCLASS_MISC, "esm@4100000", &dev);
+	if (ret)
+		printf("esm mcu init failed: %d\n", ret);
+
+	enable_mcu_esm_reset();
+#endif
 
 #if defined(CONFIG_K3_AM64_DDRSS)
 	ret = uclass_get_device(UCLASS_RAM, 0, &dev);
 	if (ret)
 		panic("DRAM init failed: %d\n", ret);
 #endif
+	if (IS_ENABLED(CONFIG_SPL_ETH) && IS_ENABLED(CONFIG_TI_AM65_CPSW_NUSS) &&
+	    spl_boot_device() == BOOT_DEVICE_ETHERNET) {
+		struct udevice *cpswdev;
+
+		if (uclass_get_device_by_driver(UCLASS_MISC, DM_DRIVER_GET(am65_cpsw_nuss), &cpswdev))
+			printf("Failed to probe am65_cpsw_nuss driver\n");
+	}
 }
 
-u32 spl_mmc_boot_mode(const u32 boot_device)
+u32 spl_mmc_boot_mode(struct mmc *mmc, const u32 boot_device)
 {
 	switch (boot_device) {
 	case BOOT_DEVICE_MMC1:
@@ -303,55 +377,3 @@ u32 spl_boot_device(void)
 	else
 		return __get_backup_bootmedia(devstat);
 }
-#endif
-
-#if defined(CONFIG_SYS_K3_SPL_ATF)
-
-#define AM64X_DEV_RTI8			127
-#define AM64X_DEV_RTI9			128
-#define AM64X_DEV_R5FSS0_CORE0		121
-#define AM64X_DEV_R5FSS0_CORE1		122
-
-void release_resources_for_core_shutdown(void)
-{
-	struct ti_sci_handle *ti_sci = get_ti_sci_handle();
-	struct ti_sci_dev_ops *dev_ops = &ti_sci->ops.dev_ops;
-	struct ti_sci_proc_ops *proc_ops = &ti_sci->ops.proc_ops;
-	int ret;
-	u32 i;
-
-	const u32 put_device_ids[] = {
-		AM64X_DEV_RTI9,
-		AM64X_DEV_RTI8,
-	};
-
-	/* Iterate through list of devices to put (shutdown) */
-	for (i = 0; i < ARRAY_SIZE(put_device_ids); i++) {
-		u32 id = put_device_ids[i];
-
-		ret = dev_ops->put_device(ti_sci, id);
-		if (ret)
-			panic("Failed to put device %u (%d)\n", id, ret);
-	}
-
-	const u32 put_core_ids[] = {
-		AM64X_DEV_R5FSS0_CORE1,
-		AM64X_DEV_R5FSS0_CORE0, /* Handle CPU0 after CPU1 */
-	};
-
-	/* Iterate through list of cores to put (shutdown) */
-	for (i = 0; i < ARRAY_SIZE(put_core_ids); i++) {
-		u32 id = put_core_ids[i];
-
-		/*
-		 * Queue up the core shutdown request. Note that this call
-		 * needs to be followed up by an actual invocation of an WFE
-		 * or WFI CPU instruction.
-		 */
-		ret = proc_ops->proc_shutdown_no_wait(ti_sci, id);
-		if (ret)
-			panic("Failed sending core %u shutdown message (%d)\n",
-			      id, ret);
-	}
-}
-#endif

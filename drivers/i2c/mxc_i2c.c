@@ -39,8 +39,8 @@ DECLARE_GLOBAL_DATA_PTR;
 #define VF610_I2C_REGSHIFT	0
 
 #define I2C_EARLY_INIT_INDEX		0
-#ifdef CONFIG_SYS_I2C_IFDR_DIV
-#define I2C_IFDR_DIV_CONSERVATIVE	CONFIG_SYS_I2C_IFDR_DIV
+#ifdef CFG_SYS_I2C_IFDR_DIV
+#define I2C_IFDR_DIV_CONSERVATIVE	CFG_SYS_I2C_IFDR_DIV
 #else
 #define I2C_IFDR_DIV_CONSERVATIVE	0x7e
 #endif
@@ -108,32 +108,6 @@ static u16 i2c_clk_div[50][2] = {
 	{ 1920,	0x1B }, { 2048,	0x3F }, { 2304,	0x1C }, { 2560,	0x1D },
 	{ 3072,	0x1E }, { 3840,	0x1F }
 };
-#endif
-
-#ifndef CONFIG_SYS_MXC_I2C1_SPEED
-#define CONFIG_SYS_MXC_I2C1_SPEED 100000
-#endif
-#ifndef CONFIG_SYS_MXC_I2C2_SPEED
-#define CONFIG_SYS_MXC_I2C2_SPEED 100000
-#endif
-#ifndef CONFIG_SYS_MXC_I2C3_SPEED
-#define CONFIG_SYS_MXC_I2C3_SPEED 100000
-#endif
-#ifndef CONFIG_SYS_MXC_I2C4_SPEED
-#define CONFIG_SYS_MXC_I2C4_SPEED 100000
-#endif
-
-#ifndef CONFIG_SYS_MXC_I2C1_SLAVE
-#define CONFIG_SYS_MXC_I2C1_SLAVE 0
-#endif
-#ifndef CONFIG_SYS_MXC_I2C2_SLAVE
-#define CONFIG_SYS_MXC_I2C2_SLAVE 0
-#endif
-#ifndef CONFIG_SYS_MXC_I2C3_SLAVE
-#define CONFIG_SYS_MXC_I2C3_SLAVE 0
-#endif
-#ifndef CONFIG_SYS_MXC_I2C4_SLAVE
-#define CONFIG_SYS_MXC_I2C4_SLAVE 0
 #endif
 
 /*
@@ -225,7 +199,7 @@ static int wait_for_sr_state(struct mxc_i2c_bus *i2c_bus, unsigned state)
 		}
 		if ((sr & (state >> 8)) == (unsigned char)state)
 			return sr;
-		WATCHDOG_RESET();
+		schedule();
 		elapsed = get_timer(start_time);
 		if (elapsed > (CONFIG_SYS_HZ / 10))	/* .1 seconds */
 			break;
@@ -473,7 +447,7 @@ int i2c_idle_bus(struct mxc_i2c_bus *i2c_bus)
 		sda = dm_gpio_get_value(sda_gpio);
 		if ((sda & scl) == 1)
 			break;
-		WATCHDOG_RESET();
+		schedule();
 		elapsed = get_timer(start_time);
 		if (elapsed > (CONFIG_SYS_HZ / 5)) {	/* .2 seconds */
 			ret = -EBUSY;
@@ -770,7 +744,7 @@ void bus_i2c_init(int index, int speed, int unused,
 		return;
 	}
 
-	if (CONFIG_IS_ENABLED(IMX_MODULE_FUSE)) {
+	if (IS_ENABLED(CONFIG_IMX_MODULE_FUSE)) {
 		if (i2c_fused((ulong)mxc_i2c_buses[index].base)) {
 			printf("SoC fuse indicates I2C@0x%lx is unavailable.\n",
 			       (ulong)mxc_i2c_buses[index].base);
@@ -797,8 +771,6 @@ void bus_i2c_init(int index, int speed, int unused,
 
 	bus_i2c_set_bus_speed(&mxc_i2c_buses[index], speed);
 }
-
-
 
 /*
  * Init I2C Bus
@@ -906,7 +878,7 @@ static int mxc_i2c_probe(struct udevice *bus)
 	if (addr == FDT_ADDR_T_NONE)
 		return -EINVAL;
 
-	if (CONFIG_IS_ENABLED(IMX_MODULE_FUSE)) {
+	if (IS_ENABLED(CONFIG_IMX_MODULE_FUSE)) {
 		if (i2c_fused((ulong)addr)) {
 			printf("SoC fuse indicates I2C@0x%lx is unavailable.\n",
 			       (ulong)addr);
@@ -966,7 +938,7 @@ static int mxc_i2c_probe(struct udevice *bus)
 	 * we can set pinmux here in probe function.
 	 */
 
-	debug("i2c : controller bus %d at %lu , speed %d: ",
+	debug("i2c : controller bus %d at 0x%lx , speed %d: ",
 	      dev_seq(bus), i2c_bus->base,
 	      i2c_bus->speed);
 

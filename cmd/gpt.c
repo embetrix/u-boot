@@ -38,7 +38,7 @@ static LIST_HEAD(disk_partitions);
  * @param str - pointer to string
  * @param env - pointer to pointer to extracted env
  *
- * @return - zero on successful expand and env is set
+ * Return: - zero on successful expand and env is set
  */
 static int extract_env(const char *str, char **env)
 {
@@ -97,7 +97,7 @@ static int extract_env(const char *str, char **env)
  * @param str - pointer to string with key=values pairs
  * @param key - pointer to the key to search for
  *
- * @return - pointer to allocated string with the value
+ * Return: - pointer to allocated string with the value
  */
 static char *extract_val(const char *str, const char *key)
 {
@@ -134,7 +134,7 @@ static char *extract_val(const char *str, const char *key)
  * @param str - pointer to string with key
  * @param key - pointer to the key to search for
  *
- * @return - true on found key
+ * Return: - true on found key
  */
 static bool found_key(const char *str, const char *key)
 {
@@ -403,7 +403,7 @@ static int do_get_gpt_info(struct blk_desc *dev_desc, char * const namestr)
  * @param partitions - pointer to pointer to allocated partitions array
  * @param parts_count - number of partitions
  *
- * @return - zero on success, otherwise error
+ * Return: - zero on success, otherwise error
  *
  */
 static int set_gpt_info(struct blk_desc *dev_desc,
@@ -586,6 +586,15 @@ err:
 	return errno;
 }
 
+static int gpt_repair(struct blk_desc *blk_dev_desc)
+{
+	int ret = 0;
+
+	ret = gpt_repair_headers(blk_dev_desc);
+
+	return ret;
+}
+
 static int gpt_default(struct blk_desc *blk_dev_desc, const char *str_part)
 {
 	int ret;
@@ -682,12 +691,13 @@ static int gpt_enumerate(struct blk_desc *desc)
 		int ret;
 		int i;
 
+		if (part_drv->test(desc))
+			continue;
+
 		for (i = 1; i < part_drv->max_entries; i++) {
 			ret = part_drv->get_info(desc, i, &pinfo);
-			if (ret) {
-				/* no more entries in table */
-				break;
-			}
+			if (ret)
+				continue;
 
 			ptr = &part_list[str_len];
 			tmp_len = strlen((const char *)pinfo.name);
@@ -702,9 +712,10 @@ static int gpt_enumerate(struct blk_desc *desc)
 			/* One byte for space(" ") delimiter */
 			ptr[tmp_len] = ' ';
 		}
+		if (*part_list)
+			part_list[strlen(part_list) - 1] = 0;
+		break;
 	}
-	if (*part_list)
-		part_list[strlen(part_list) - 1] = 0;
 	debug("setenv gpt_partition_list %s\n", part_list);
 
 	return env_set("gpt_partition_list", part_list);
@@ -733,7 +744,7 @@ static int gpt_setenv_part_variables(struct disk_partition *pinfo, int i)
 	if (ret)
 		goto fail;
 
-	ret = env_set_ulong("gpt_partition_entry", i);
+	ret = env_set_hex("gpt_partition_entry", i);
 	if (ret)
 		goto fail;
 
@@ -777,10 +788,8 @@ static int gpt_setenv(struct blk_desc *desc, const char *name)
 
 		for (i = 1; i < part_drv->max_entries; i++) {
 			ret = part_drv->get_info(desc, i, &pinfo);
-			if (ret) {
-				/* no more entries in table */
-				break;
-			}
+			if (ret)
+				continue;
 
 			if (!strcmp(name, (const char *)pinfo.name)) {
 				/* match found, setup environment variables */
@@ -969,7 +978,7 @@ static int do_rename_gpt_parts(struct blk_desc *dev_desc, char *subcomm,
  * @param argc
  * @param argv
  *
- * @return zero on success; otherwise error
+ * Return: zero on success; otherwise error
  */
 static int do_gpt(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 {
@@ -997,7 +1006,10 @@ static int do_gpt(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 		return CMD_RET_FAILURE;
 	}
 
-	if ((strcmp(argv[1], "write") == 0) && (argc == 5)) {
+	if (strcmp(argv[1], "repair") == 0) {
+		printf("Repairing GPT: ");
+		ret = gpt_repair(blk_dev_desc);
+	} else if ((strcmp(argv[1], "write") == 0) && (argc == 5)) {
 		printf("Writing GPT: ");
 		ret = gpt_default(blk_dev_desc, argv[4]);
 	} else if ((strcmp(argv[1], "verify") == 0)) {
@@ -1036,6 +1048,8 @@ U_BOOT_CMD(gpt, CONFIG_SYS_MAXARGS, 1, do_gpt,
 	" Restore or verify GPT information on a device connected\n"
 	" to interface\n"
 	" Example usage:\n"
+	" gpt repair mmc 0\n"
+	"    - repair the GPT on the device\n"
 	" gpt write mmc 0 $partitions\n"
 	"    - write the GPT to device\n"
 	" gpt verify mmc 0 $partitions\n"
@@ -1046,8 +1060,6 @@ U_BOOT_CMD(gpt, CONFIG_SYS_MAXARGS, 1, do_gpt,
 	"      gpt_partition_name, gpt_partition_entry\n"
 	" gpt enumerate mmc 0\n"
 	"    - store list of partitions to gpt_partition_list environment variable\n"
-	" read <interface> <dev>\n"
-	"    - read GPT into a data structure for manipulation\n"
 	" gpt guid <interface> <dev>\n"
 	"    - print disk GUID\n"
 	" gpt guid <interface> <dev> <varname>\n"

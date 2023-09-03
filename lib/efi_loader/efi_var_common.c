@@ -62,7 +62,7 @@ efi_status_t EFIAPI efi_get_variable(u16 *variable_name,
 {
 	efi_status_t ret;
 
-	EFI_ENTRY("\"%ls\" %pUl %p %p %p", variable_name, vendor, attributes,
+	EFI_ENTRY("\"%ls\" %pUs %p %p %p", variable_name, vendor, attributes,
 		  data_size, data);
 
 	ret = efi_get_variable_int(variable_name, vendor, attributes,
@@ -96,7 +96,7 @@ efi_status_t EFIAPI efi_set_variable(u16 *variable_name,
 {
 	efi_status_t ret;
 
-	EFI_ENTRY("\"%ls\" %pUl %x %zu %p", variable_name, vendor, attributes,
+	EFI_ENTRY("\"%ls\" %pUs %x %zu %p", variable_name, vendor, attributes,
 		  data_size, data);
 
 	/* Make sure that the EFI_VARIABLE_READ_ONLY flag is not set */
@@ -127,7 +127,7 @@ efi_status_t EFIAPI efi_get_next_variable_name(efi_uintn_t *variable_name_size,
 {
 	efi_status_t ret;
 
-	EFI_ENTRY("%p \"%ls\" %pUl", variable_name_size, variable_name, vendor);
+	EFI_ENTRY("%p \"%ls\" %pUs", variable_name_size, variable_name, vendor);
 
 	ret = efi_get_next_variable_name_int(variable_name_size, variable_name,
 					     vendor);
@@ -165,16 +165,8 @@ efi_status_t EFIAPI efi_query_variable_info(
 
 	if (!maximum_variable_storage_size ||
 	    !remaining_variable_storage_size ||
-	    !maximum_variable_size ||
-	    !(attributes & EFI_VARIABLE_BOOTSERVICE_ACCESS))
+	    !maximum_variable_size)
 		return EFI_EXIT(EFI_INVALID_PARAMETER);
-
-	if ((attributes & ~(u32)EFI_VARIABLE_MASK) ||
-	    (attributes & EFI_VARIABLE_AUTHENTICATED_WRITE_ACCESS) ||
-	    (attributes & EFI_VARIABLE_HARDWARE_ERROR_RECORD) ||
-	    (!IS_ENABLED(CONFIG_EFI_SECURE_BOOT) &&
-	     (attributes & EFI_VARIABLE_TIME_BASED_AUTHENTICATED_WRITE_ACCESS)))
-		return EFI_EXIT(EFI_UNSUPPORTED);
 
 	ret = efi_query_variable_info_int(attributes,
 					  maximum_variable_storage_size,
@@ -229,26 +221,26 @@ static efi_status_t efi_set_secure_state(u8 secure_boot, u8 setup_mode,
 
 	efi_secure_boot = secure_boot;
 
-	ret = efi_set_variable_int(L"SecureBoot", &efi_global_variable_guid,
+	ret = efi_set_variable_int(u"SecureBoot", &efi_global_variable_guid,
 				   attributes_ro, sizeof(secure_boot),
 				   &secure_boot, false);
 	if (ret != EFI_SUCCESS)
 		goto err;
 
-	ret = efi_set_variable_int(L"SetupMode", &efi_global_variable_guid,
+	ret = efi_set_variable_int(u"SetupMode", &efi_global_variable_guid,
 				   attributes_ro, sizeof(setup_mode),
 				   &setup_mode, false);
 	if (ret != EFI_SUCCESS)
 		goto err;
 
-	ret = efi_set_variable_int(L"AuditMode", &efi_global_variable_guid,
+	ret = efi_set_variable_int(u"AuditMode", &efi_global_variable_guid,
 				   audit_mode || setup_mode ?
 				   attributes_ro : attributes_rw,
 				   sizeof(audit_mode), &audit_mode, false);
 	if (ret != EFI_SUCCESS)
 		goto err;
 
-	ret = efi_set_variable_int(L"DeployedMode",
+	ret = efi_set_variable_int(u"DeployedMode",
 				   &efi_global_variable_guid,
 				   audit_mode || deployed_mode || setup_mode ?
 				   attributes_ro : attributes_rw,
@@ -280,7 +272,7 @@ static efi_status_t efi_transfer_secure_state(enum efi_secure_mode mode)
 		if (ret != EFI_SUCCESS)
 			goto err;
 	} else if (mode == EFI_MODE_AUDIT) {
-		ret = efi_set_variable_int(L"PK", &efi_global_variable_guid,
+		ret = efi_set_variable_int(u"PK", &efi_global_variable_guid,
 					   EFI_VARIABLE_BOOTSERVICE_ACCESS |
 					   EFI_VARIABLE_RUNTIME_ACCESS,
 					   0, NULL, false);
@@ -354,7 +346,7 @@ efi_status_t efi_init_secure_state(void)
 		return ret;
 
 	/* As we do not provide vendor keys this variable is always 0. */
-	ret = efi_set_variable_int(L"VendorKeys",
+	ret = efi_set_variable_int(u"VendorKeys",
 				   &efi_global_variable_guid,
 				   EFI_VARIABLE_BOOTSERVICE_ACCESS |
 				   EFI_VARIABLE_RUNTIME_ACCESS |
@@ -374,7 +366,8 @@ bool efi_secure_boot_enabled(void)
 	return efi_secure_boot;
 }
 
-enum efi_auth_var_type efi_auth_var_get_type(u16 *name, const efi_guid_t *guid)
+enum efi_auth_var_type efi_auth_var_get_type(const u16 *name,
+					     const efi_guid_t *guid)
 {
 	for (size_t i = 0; i < ARRAY_SIZE(name_type); ++i) {
 		if (!u16_strcmp(name, name_type[i].name) &&
@@ -382,6 +375,15 @@ enum efi_auth_var_type efi_auth_var_get_type(u16 *name, const efi_guid_t *guid)
 			return name_type[i].type;
 	}
 	return EFI_AUTH_VAR_NONE;
+}
+
+const efi_guid_t *efi_auth_var_get_guid(const u16 *name)
+{
+	for (size_t i = 0; i < ARRAY_SIZE(name_type); ++i) {
+		if (!u16_strcmp(name, name_type[i].name))
+			return name_type[i].guid;
+	}
+	return &efi_global_variable_guid;
 }
 
 /**
@@ -393,7 +395,7 @@ enum efi_auth_var_type efi_auth_var_get_type(u16 *name, const efi_guid_t *guid)
  *
  * Return:	buffer with variable data or NULL
  */
-void *efi_get_var(u16 *name, const efi_guid_t *vendor, efi_uintn_t *size)
+void *efi_get_var(const u16 *name, const efi_guid_t *vendor, efi_uintn_t *size)
 {
 	efi_status_t ret;
 	void *buf = NULL;

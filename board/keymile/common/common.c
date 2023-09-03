@@ -19,6 +19,8 @@
 #include <asm/io.h>
 #include <linux/ctype.h>
 #include <linux/delay.h>
+#include <linux/bug.h>
+#include <bootcount.h>
 
 #if defined(CONFIG_POST)
 #include "post.h"
@@ -50,7 +52,7 @@ int set_km_env(void)
 	char envval[16];
 	char *p;
 
-	pnvramaddr = CONFIG_SYS_SDRAM_BASE + gd->ram_size -
+	pnvramaddr = CFG_SYS_SDRAM_BASE + gd->ram_size -
 		CONFIG_KM_RESERVED_PRAM - CONFIG_KM_PHRAM - CONFIG_KM_PNVRAM;
 	sprintf(envval, "0x%x", pnvramaddr);
 	env_set("pnvramaddr", envval);
@@ -63,7 +65,7 @@ int set_km_env(void)
 		CONFIG_KM_PNVRAM) / 0x400;
 	env_set_ulong("pram", pram);
 
-	varaddr = CONFIG_SYS_SDRAM_BASE + gd->ram_size -
+	varaddr = CFG_SYS_SDRAM_BASE + gd->ram_size -
 		CONFIG_KM_RESERVED_PRAM - CONFIG_KM_PHRAM;
 	env_set_hex("varaddr", varaddr);
 	sprintf(envval, "0x%x", varaddr);
@@ -75,6 +77,57 @@ int set_km_env(void)
 
 	return 0;
 }
+
+#if IS_ENABLED(CONFIG_PG_WCOM_UBOOT_UPDATE_SUPPORTED)
+#if   ((!IS_ENABLED(CONFIG_PG_WCOM_UBOOT_BOOTPACKAGE) && \
+	!IS_ENABLED(CONFIG_PG_WCOM_UBOOT_UPDATE)) ||     \
+	(IS_ENABLED(CONFIG_PG_WCOM_UBOOT_BOOTPACKAGE) && \
+	IS_ENABLED(CONFIG_PG_WCOM_UBOOT_UPDATE)))
+#error "It has to be either bootpackage or update u-boot image!"
+#endif
+void check_for_uboot_update(void)
+{
+	void (*uboot_update_entry)(void) =
+		(void (*)(void)) CONFIG_PG_WCOM_UBOOT_UPDATE_TEXT_BASE;
+	char *isupdated = env_get("updateduboot");
+	ulong bootcount = bootcount_load();
+	ulong ebootcount = 0;
+
+	if (IS_ENABLED(CONFIG_PG_WCOM_UBOOT_BOOTPACKAGE)) {
+		/*
+		 * When running in factory burned u-boot move to the updated
+		 * u-boot version only if updateduboot envvar is set to 'yes'
+		 * and bootcount limit is not exceeded.
+		 * Board must be able to start in factory bootloader mode!
+		 */
+		if (isupdated && !strncmp(isupdated, "yes", 3) &&
+		    bootcount <= CONFIG_BOOTCOUNT_BOOTLIMIT) {
+			printf("Check update: update detected, ");
+			printf("starting new image @%08x ...\n",
+			       CONFIG_PG_WCOM_UBOOT_UPDATE_TEXT_BASE);
+			ebootcount = early_bootcount_load();
+			if (ebootcount <= CONFIG_BOOTCOUNT_BOOTLIMIT) {
+				early_bootcount_store(++ebootcount);
+				uboot_update_entry();
+			} else {
+				printf("Check update: warning: ");
+				printf("early bootcount exceeded (%lu)\n",
+				       ebootcount);
+			}
+		}
+		printf("Check update: starting factory image @%08x ...\n",
+		       CONFIG_TEXT_BASE);
+	} else if (IS_ENABLED(CONFIG_PG_WCOM_UBOOT_UPDATE)) {
+		/*
+		 * When running in field updated u-boot, make sure that
+		 * bootcount limit is never exceeded. Must never happen!
+		 */
+		WARN_ON(bootcount > CONFIG_BOOTCOUNT_BOOTLIMIT);
+		printf("Check update: updated u-boot starting @%08x ...\n",
+		       CONFIG_TEXT_BASE);
+	}
+}
+#endif
 
 #if defined(CONFIG_SYS_I2C_INIT_BOARD)
 static void i2c_write_start_seq(void)

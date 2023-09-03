@@ -132,12 +132,16 @@ struct am335x_nand_geometry {
 	u8 nand_bus;
 };
 
+#define EEPROM_ADDR		0x50
+#define EEPROM_ADDR_DDR3	0x90
+#define EEPROM_ADDR_CHIP	0x120
+
 static int draco_read_nand_geometry(void)
 {
 	struct am335x_nand_geometry geo;
 
 	/* Read NAND geometry */
-	if (i2c_read(CONFIG_SYS_I2C_EEPROM_ADDR, 0x80, 2,
+	if (i2c_read(EEPROM_ADDR, 0x80, 2,
 		     (uchar *)&geo, sizeof(struct am335x_nand_geometry))) {
 		printf("Could not read the NAND geomtery; something fundamentally wrong on the I2C bus.\n");
 		return -EIO;
@@ -160,20 +164,20 @@ static int draco_read_nand_geometry(void)
 static int read_eeprom(void)
 {
 	/* Check if baseboard eeprom is available */
-	if (i2c_probe(CONFIG_SYS_I2C_EEPROM_ADDR)) {
+	if (i2c_probe(EEPROM_ADDR)) {
 		printf("Could not probe the EEPROM; something fundamentally wrong on the I2C bus.\n");
 		return 1;
 	}
 
 #ifdef CONFIG_SPL_BUILD
 	/* Read Siemens eeprom data (DDR3) */
-	if (i2c_read(CONFIG_SYS_I2C_EEPROM_ADDR, EEPROM_ADDR_DDR3, 2,
+	if (i2c_read(EEPROM_ADDR, EEPROM_ADDR_DDR3, 2,
 		     (uchar *)&settings.ddr3, sizeof(struct ddr3_data))) {
 		printf("Could not read the EEPROM; something fundamentally wrong on the I2C bus.\nUse default DDR3 timings\n");
 		set_default_ddr3_timings();
 	}
 	/* Read Siemens eeprom data (CHIP) */
-	if (i2c_read(CONFIG_SYS_I2C_EEPROM_ADDR, EEPROM_ADDR_CHIP, 2,
+	if (i2c_read(EEPROM_ADDR, EEPROM_ADDR_CHIP, 2,
 		     (uchar *)&settings.chip, sizeof(settings.chip)))
 		printf("Could not read chip settings\n");
 
@@ -366,7 +370,14 @@ U_BOOT_CMD(
 #endif /* #if defined(CONFIG_DRIVER_TI_CPSW) */
 #endif /* #if (defined(CONFIG_DRIVER_TI_CPSW) && !defined(CONFIG_SPL_BUILD)) */
 
-#ifdef CONFIG_NAND_CS_INIT
+#if CONFIG_IS_ENABLED(NAND_CS_INIT)
+#define ETAMIN_NAND_GPMC_CONFIG1	0x00000800
+#define ETAMIN_NAND_GPMC_CONFIG2	0x001e1e00
+#define ETAMIN_NAND_GPMC_CONFIG3	0x001e1e00
+#define ETAMIN_NAND_GPMC_CONFIG4	0x16051807
+#define ETAMIN_NAND_GPMC_CONFIG5	0x00151e1e
+#define ETAMIN_NAND_GPMC_CONFIG6	0x16000f80
+
 /* GPMC definitions for second nand cs1 */
 static const u32 gpmc_nand_config[] = {
 	ETAMIN_NAND_GPMC_CONFIG1,

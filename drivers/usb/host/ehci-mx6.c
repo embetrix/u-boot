@@ -23,6 +23,7 @@
 #include <asm/mach-types.h>
 #include <power/regulator.h>
 #include <linux/usb/otg.h>
+#include <linux/usb/phy.h>
 
 #include "ehci.h"
 
@@ -69,8 +70,8 @@ DECLARE_GLOBAL_DATA_PTR;
 #define UCMD_RESET		(1 << 1) /* controller reset */
 
 /* If this is not defined, assume MX6/MX7/MX8M SoC default */
-#ifndef CONFIG_MXC_USB_PORTSC
-#define CONFIG_MXC_USB_PORTSC	(PORT_PTS_UTMI | PORT_PTS_PTW)
+#ifndef CFG_MXC_USB_PORTSC
+#define CFG_MXC_USB_PORTSC	(PORT_PTS_UTMI | PORT_PTS_PTW)
 #endif
 
 /* Base address for this IP block is 0x02184800 */
@@ -271,12 +272,7 @@ static void usb_oc_config(struct usbnc_regs *usbnc, int index)
 {
 	void __iomem *ctrl = (void __iomem *)(&usbnc->ctrl[index]);
 
-#if CONFIG_MACH_TYPE == MACH_TYPE_MX6Q_ARM2
-	/* mx6qarm2 seems to required a different setting*/
-	clrbits_le32(ctrl, UCTRL_OVER_CUR_POL);
-#else
 	setbits_le32(ctrl, UCTRL_OVER_CUR_POL);
-#endif
 
 	setbits_le32(ctrl, UCTRL_OVER_CUR_DIS);
 
@@ -364,7 +360,7 @@ int ehci_hcd_init(int index, enum usb_init_type init,
 	if (index > 3)
 		return -EINVAL;
 
-	if (CONFIG_IS_ENABLED(IMX_MODULE_FUSE)) {
+	if (IS_ENABLED(CONFIG_IMX_MODULE_FUSE)) {
 		if (usb_fused((ulong)ehci)) {
 			printf("SoC fuse indicates USB@0x%lx is unavailable.\n",
 			       (ulong)ehci);
@@ -415,7 +411,7 @@ int ehci_hcd_init(int index, enum usb_init_type init,
 		return 0;
 
 	setbits_le32(&ehci->usbmode, CM_HOST);
-	writel(CONFIG_MXC_USB_PORTSC, &ehci->portsc);
+	writel(CFG_MXC_USB_PORTSC, &ehci->portsc);
 	setbits_le32(&ehci->portsc, USB_EN);
 
 	mdelay(10);
@@ -435,6 +431,7 @@ struct ehci_mx6_priv_data {
 	struct clk clk;
 	struct phy phy;
 	enum usb_init_type init_type;
+	enum usb_phy_interface phy_type;
 #if !defined(CONFIG_PHY)
 	int portnr;
 	void __iomem *phy_addr;
@@ -442,6 +439,24 @@ struct ehci_mx6_priv_data {
 	void __iomem *anatop_addr;
 #endif
 };
+
+static u32 mx6_portsc(enum usb_phy_interface phy_type)
+{
+	switch (phy_type) {
+	case USBPHY_INTERFACE_MODE_UTMI:
+		return PORT_PTS_UTMI;
+	case USBPHY_INTERFACE_MODE_UTMIW:
+		return PORT_PTS_UTMI | PORT_PTS_PTW;
+	case USBPHY_INTERFACE_MODE_ULPI:
+		return PORT_PTS_ULPI;
+	case USBPHY_INTERFACE_MODE_SERIAL:
+		return PORT_PTS_SERIAL;
+	case USBPHY_INTERFACE_MODE_HSIC:
+		return PORT_PTS_HSIC;
+	default:
+		return CFG_MXC_USB_PORTSC;
+	}
+}
 
 static int mx6_init_after_reset(struct ehci_ctrl *dev)
 {
@@ -479,7 +494,7 @@ static int mx6_init_after_reset(struct ehci_ctrl *dev)
 		return 0;
 
 	setbits_le32(&ehci->usbmode, CM_HOST);
-	writel(CONFIG_MXC_USB_PORTSC, &ehci->portsc);
+	writel(mx6_portsc(priv->phy_type), &ehci->portsc);
 	setbits_le32(&ehci->portsc, USB_EN);
 
 	mdelay(10);
@@ -523,7 +538,7 @@ static int ehci_usb_phy_mode(struct udevice *dev)
 			plat->init_type = USB_INIT_DEVICE;
 		else
 			plat->init_type = USB_INIT_HOST;
-	} else if (is_mx7()) {
+	} else if (is_mx7() || is_imx8mm() || is_imx8mn()) {
 		phy_status = (void __iomem *)(addr +
 					      USBNC_PHY_STATUS_OFFSET);
 		val = readl(phy_status);
@@ -553,9 +568,8 @@ static int ehci_usb_of_to_plat(struct udevice *dev)
 	case USB_DR_MODE_PERIPHERAL:
 		plat->init_type = USB_INIT_DEVICE;
 		break;
-	case USB_DR_MODE_OTG:
-	case USB_DR_MODE_UNKNOWN:
-		return ehci_usb_phy_mode(dev);
+	default:
+		plat->init_type = USB_INIT_UNKNOWN;
 	};
 
 	return 0;
@@ -627,7 +641,7 @@ static int ehci_usb_probe(struct udevice *dev)
 	struct ehci_hcor *hcor;
 	int ret;
 
-	if (CONFIG_IS_ENABLED(IMX_MODULE_FUSE)) {
+	if (IS_ENABLED(CONFIG_IMX_MODULE_FUSE)) {
 		if (usb_fused((ulong)ehci)) {
 			printf("SoC fuse indicates USB@0x%lx is unavailable.\n",
 			       (ulong)ehci);
@@ -641,6 +655,7 @@ static int ehci_usb_probe(struct udevice *dev)
 
 	priv->ehci = ehci;
 	priv->init_type = type;
+	priv->phy_type = usb_get_phy_mode(dev_ofnode(dev));
 
 #if CONFIG_IS_ENABLED(CLK)
 	ret = clk_get_by_index(dev, 0, &priv->clk);
@@ -655,6 +670,20 @@ static int ehci_usb_probe(struct udevice *dev)
 	enable_usboh3_clk(1);
 	mdelay(1);
 #endif
+
+	/*
+	 * If the device tree didn't specify host or device,
+	 * the default is USB_INIT_UNKNOWN, so we need to check
+	 * the register. For imx8mm and imx8mn, the clocks need to be
+	 * running first, so we defer the check until they are.
+	 */
+	if (priv->init_type == USB_INIT_UNKNOWN) {
+		ret = ehci_usb_phy_mode(dev);
+		if (ret)
+			goto err_clk;
+		else
+			priv->init_type = plat->init_type;
+	}
 
 #if CONFIG_IS_ENABLED(DM_REGULATOR)
 	ret = device_get_supply_regulator(dev, "vbus-supply",
@@ -674,33 +703,19 @@ static int ehci_usb_probe(struct udevice *dev)
 	usb_internal_phy_clock_gate(priv->phy_addr, 1);
 	usb_phy_enable(ehci, priv->phy_addr);
 #endif
-#endif
-
-#if CONFIG_IS_ENABLED(DM_REGULATOR)
-	if (priv->vbus_supply) {
-		ret = regulator_set_enable(priv->vbus_supply,
-					   (type == USB_INIT_DEVICE) ?
-					   false : true);
-		if (ret && ret != -ENOSYS) {
-			printf("Error enabling VBUS supply (ret=%i)\n", ret);
-			goto err_clk;
-		}
-	}
+#else
+	ret = generic_setup_phy(dev, &priv->phy, 0);
+	if (ret)
+		goto err_regulator;
 #endif
 
 	if (priv->init_type == USB_INIT_HOST) {
 		setbits_le32(&ehci->usbmode, CM_HOST);
-		writel(CONFIG_MXC_USB_PORTSC, &ehci->portsc);
+		writel(mx6_portsc(priv->phy_type), &ehci->portsc);
 		setbits_le32(&ehci->portsc, USB_EN);
 	}
 
 	mdelay(10);
-
-#if defined(CONFIG_PHY)
-	ret = ehci_setup_phy(dev, &priv->phy, 0);
-	if (ret)
-		goto err_regulator;
-#endif
 
 	hccr = (struct ehci_hccr *)((uintptr_t)&ehci->caplength);
 	hcor = (struct ehci_hcor *)((uintptr_t)hccr +
@@ -714,14 +729,10 @@ static int ehci_usb_probe(struct udevice *dev)
 
 err_phy:
 #if defined(CONFIG_PHY)
-	ehci_shutdown_phy(dev, &priv->phy);
+	generic_shutdown_phy(&priv->phy);
 err_regulator:
 #endif
-#if CONFIG_IS_ENABLED(DM_REGULATOR)
-	if (priv->vbus_supply)
-		regulator_set_enable(priv->vbus_supply, false);
 err_clk:
-#endif
 #if CONFIG_IS_ENABLED(CLK)
 	clk_disable(&priv->clk);
 #else
@@ -738,7 +749,7 @@ int ehci_usb_remove(struct udevice *dev)
 	ehci_deregister(dev);
 
 #if defined(CONFIG_PHY)
-	ehci_shutdown_phy(dev, &priv->phy);
+	generic_shutdown_phy(&priv->phy);
 #endif
 
 #if CONFIG_IS_ENABLED(DM_REGULATOR)

@@ -70,7 +70,7 @@
 #define ll_entry_declare(_type, _name, _list)				\
 	_type _u_boot_list_2_##_list##_2_##_name __aligned(4)		\
 			__attribute__((unused))				\
-			__section(".u_boot_list_2_"#_list"_2_"#_name)
+			__section("__u_boot_list_2_"#_list"_2_"#_name)
 
 /**
  * ll_entry_declare_list() - Declare a list of link-generated array entries
@@ -93,7 +93,7 @@
 #define ll_entry_declare_list(_type, _name, _list)			\
 	_type _u_boot_list_2_##_list##_2_##_name[] __aligned(4)		\
 			__attribute__((unused))				\
-			__section(".u_boot_list_2_"#_list"_2_"#_name)
+			__section("__u_boot_list_2_"#_list"_2_"#_name)
 
 /*
  * We need a 0-byte-size type for iterator symbols, and the compiler
@@ -110,7 +110,7 @@
  * @_list:	Name of the list in which this entry is placed
  *
  * This function returns ``(_type *)`` pointer to the very first entry of a
- * linker-generated array placed into subsection of .u_boot_list section
+ * linker-generated array placed into subsection of __u_boot_list section
  * specified by _list argument.
  *
  * Since this macro defines an array start symbol, its leftmost index
@@ -126,8 +126,10 @@
 ({									\
 	static char start[0] __aligned(CONFIG_LINKER_LIST_ALIGN)	\
 		__attribute__((unused))					\
-		__section(".u_boot_list_2_"#_list"_1");			\
-	(_type *)&start;						\
+		__section("__u_boot_list_2_"#_list"_1");			\
+	_type * tmp = (_type *)&start;					\
+	asm("":"+r"(tmp));						\
+	tmp;								\
 })
 
 /**
@@ -137,7 +139,7 @@
  *		(with underscores instead of dots)
  *
  * This function returns ``(_type *)`` pointer after the very last entry of
- * a linker-generated array placed into subsection of .u_boot_list
+ * a linker-generated array placed into subsection of __u_boot_list
  * section specified by _list argument.
  *
  * Since this macro defines an array end symbol, its leftmost index
@@ -152,8 +154,10 @@
 #define ll_entry_end(_type, _list)					\
 ({									\
 	static char end[0] __aligned(4) __attribute__((unused))		\
-		__section(".u_boot_list_2_"#_list"_3");			\
-	(_type *)&end;							\
+		__section("__u_boot_list_2_"#_list"_3");			\
+	_type * tmp = (_type *)&end;					\
+	asm("":"+r"(tmp));						\
+	tmp;								\
 })
 /**
  * ll_entry_count() - Return the number of elements in linker-generated array
@@ -161,7 +165,7 @@
  * @_list:	Name of the list of which the number of elements is computed
  *
  * This function returns the number of elements of a linker-generated array
- * placed into subsection of .u_boot_list section specified by _list
+ * placed into subsection of __u_boot_list section specified by _list
  * argument. The result is of an unsigned int type.
  *
  * Example:
@@ -246,8 +250,10 @@
 #define ll_start(_type)							\
 ({									\
 	static char start[0] __aligned(4) __attribute__((unused))	\
-		__section(".u_boot_list_1");				\
-	(_type *)&start;						\
+		__section("__u_boot_list_1");				\
+	_type * tmp = (_type *)&start;					\
+	asm("":"+r"(tmp));						\
+	tmp;								\
 })
 
 /**
@@ -269,8 +275,10 @@
 #define ll_end(_type)							\
 ({									\
 	static char end[0] __aligned(4) __attribute__((unused))		\
-		__section(".u_boot_list_3");				\
-	(_type *)&end;							\
+		__section("__u_boot_list_3");				\
+	_type * tmp = (_type *)&end;					\
+	asm("":"+r"(tmp));						\
+	tmp;								\
 })
 
 #endif /* __ASSEMBLY__ */

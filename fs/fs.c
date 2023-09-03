@@ -7,25 +7,30 @@
 
 #include <command.h>
 #include <config.h>
+#include <display_options.h>
 #include <errno.h>
 #include <common.h>
 #include <env.h>
 #include <lmb.h>
 #include <log.h>
+#include <malloc.h>
 #include <mapmem.h>
 #include <part.h>
 #include <ext4fs.h>
 #include <fat.h>
 #include <fs.h>
 #include <sandboxfs.h>
+#include <semihostingfs.h>
 #include <ubifs_uboot.h>
 #include <btrfs.h>
 #include <asm/global_data.h>
 #include <asm/io.h>
 #include <div64.h>
 #include <linux/math64.h>
+#include <linux/sizes.h>
 #include <efi_loader.h>
 #include <squashfs.h>
+#include <erofs.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -34,10 +39,15 @@ static int fs_dev_part;
 static struct disk_partition fs_partition;
 static int fs_type = FS_TYPE_ANY;
 
+void fs_set_type(int type)
+{
+	fs_type = type;
+}
+
 static inline int fs_probe_unsupported(struct blk_desc *fs_dev_desc,
 				      struct disk_partition *fs_partition)
 {
-	log_err("** Unrecognized filesystem type **\n");
+	log_debug("Unrecognized filesystem type\n");
 	return -1;
 }
 
@@ -175,7 +185,7 @@ struct fstype_info {
 };
 
 static struct fstype_info fstypes[] = {
-#ifdef CONFIG_FS_FAT
+#if CONFIG_IS_ENABLED(FS_FAT)
 	{
 		.fstype = FS_TYPE_FAT,
 		.name = "fat",
@@ -246,6 +256,26 @@ static struct fstype_info fstypes[] = {
 		.ln = fs_ln_unsupported,
 	},
 #endif
+#ifdef CONFIG_SEMIHOSTING
+	{
+		.fstype = FS_TYPE_SEMIHOSTING,
+		.name = "semihosting",
+		.null_dev_desc_ok = true,
+		.probe = smh_fs_set_blk_dev,
+		.close = fs_close_unsupported,
+		.ls = fs_ls_unsupported,
+		.exists = fs_exists_unsupported,
+		.size = smh_fs_size,
+		.read = smh_fs_read,
+		.write = smh_fs_write,
+		.uuid = fs_uuid_unsupported,
+		.opendir = fs_opendir_unsupported,
+		.unlink = fs_unlink_unsupported,
+		.mkdir = fs_mkdir_unsupported,
+		.ln = fs_ln_unsupported,
+	},
+#endif
+#ifndef CONFIG_SPL_BUILD
 #ifdef CONFIG_CMD_UBIFS
 	{
 		.fstype = FS_TYPE_UBIFS,
@@ -265,6 +295,8 @@ static struct fstype_info fstypes[] = {
 		.ln = fs_ln_unsupported,
 	},
 #endif
+#endif
+#ifndef CONFIG_SPL_BUILD
 #ifdef CONFIG_FS_BTRFS
 	{
 		.fstype = FS_TYPE_BTRFS,
@@ -284,7 +316,8 @@ static struct fstype_info fstypes[] = {
 		.ln = fs_ln_unsupported,
 	},
 #endif
-#if IS_ENABLED(CONFIG_FS_SQUASHFS)
+#endif
+#if CONFIG_IS_ENABLED(FS_SQUASHFS)
 	{
 		.fstype = FS_TYPE_SQUASHFS,
 		.name = "squashfs",
@@ -298,6 +331,27 @@ static struct fstype_info fstypes[] = {
 		.close = sqfs_close,
 		.closedir = sqfs_closedir,
 		.exists = sqfs_exists,
+		.uuid = fs_uuid_unsupported,
+		.write = fs_write_unsupported,
+		.ln = fs_ln_unsupported,
+		.unlink = fs_unlink_unsupported,
+		.mkdir = fs_mkdir_unsupported,
+	},
+#endif
+#if IS_ENABLED(CONFIG_FS_EROFS)
+	{
+		.fstype = FS_TYPE_EROFS,
+		.name = "erofs",
+		.null_dev_desc_ok = false,
+		.probe = erofs_probe,
+		.opendir = erofs_opendir,
+		.readdir = erofs_readdir,
+		.ls = fs_ls_generic,
+		.read = erofs_read,
+		.size = erofs_size,
+		.close = erofs_close,
+		.closedir = erofs_closedir,
+		.exists = erofs_exists,
 		.uuid = fs_uuid_unsupported,
 		.write = fs_write_unsupported,
 		.ln = fs_ln_unsupported,
@@ -955,4 +1009,60 @@ int do_fs_types(struct cmd_tbl *cmdtp, int flag, int argc, char * const argv[])
 		puts(": <none>");
 	puts("\n");
 	return CMD_RET_SUCCESS;
+}
+
+int fs_read_alloc(const char *fname, ulong size, uint align, void **bufp)
+{
+	loff_t bytes_read;
+	ulong addr;
+	char *buf;
+	int ret;
+
+	buf = memalign(align, size + 1);
+	if (!buf)
+		return log_msg_ret("buf", -ENOMEM);
+	addr = map_to_sysmem(buf);
+
+	ret = fs_read(fname, addr, 0, size, &bytes_read);
+	if (ret) {
+		free(buf);
+		return log_msg_ret("read", ret);
+	}
+	if (size != bytes_read)
+		return log_msg_ret("bread", -EIO);
+	buf[size] = '\0';
+
+	*bufp = buf;
+
+	return 0;
+}
+
+int fs_load_alloc(const char *ifname, const char *dev_part_str,
+		  const char *fname, ulong max_size, ulong align, void **bufp,
+		  ulong *sizep)
+{
+	loff_t size;
+	void *buf;
+	int ret;
+
+	if (fs_set_blk_dev(ifname, dev_part_str, FS_TYPE_ANY))
+		return log_msg_ret("set", -ENOMEDIUM);
+
+	ret = fs_size(fname, &size);
+	if (ret)
+		return log_msg_ret("sz", -ENOENT);
+
+	if (size >= (max_size ?: SZ_1G))
+		return log_msg_ret("sz", -E2BIG);
+
+	if (fs_set_blk_dev(ifname, dev_part_str, FS_TYPE_ANY))
+		return log_msg_ret("set", -ENOMEDIUM);
+
+	ret = fs_read_alloc(fname, size, align, &buf);
+	if (ret)
+		return log_msg_ret("al", ret);
+	*sizep = size;
+	*bufp = buf;
+
+	return 0;
 }

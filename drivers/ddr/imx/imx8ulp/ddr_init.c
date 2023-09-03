@@ -31,6 +31,7 @@
 #define DENALI_CTL_25		(DDR_CTL_BASE_ADDR + 4 * 25)
 
 #define DENALI_PHY_1624		(DDR_PHY_BASE_ADDR + 4 * 1624)
+#define DENALI_PHY_1625  	(DDR_PHY_BASE_ADDR + 4 * 1625)
 #define DENALI_PHY_1537		(DDR_PHY_BASE_ADDR + 4 * 1537)
 #define PHY_FREQ_SEL_MULTICAST_EN(X)	((X) << 8)
 #define PHY_FREQ_SEL_INDEX(X)		((X) << 16)
@@ -82,25 +83,39 @@ int ddr_calibration(unsigned int fsp_table[3])
 	u32 int_status_init, phy_freq_req, phy_freq_type;
 	u32 lock_0, lock_1, lock_2;
 	u32 freq_chg_pt, freq_chg_cnt;
+	u32 is_lpddr4 = 0;
 
 	if (IS_ENABLED(CONFIG_IMX8ULP_DRAM_PHY_PLL_BYPASS)) {
 		ddr_enable_pll_bypass();
 		freq_chg_cnt = 0;
 		freq_chg_pt = 0;
 	} else {
-		reg_val = readl(DENALI_CTL_250);
-		if (((reg_val >> 16) & 0x3) == 1)
-			freq_chg_cnt = 2;
-		else
-			freq_chg_cnt = 3;
+		reg_val = (readl(DENALI_CTL_00)>>8)&0xf;
+		if(reg_val == 0x7) {
+			/* LPDDR3 type */
+			set_ddr_clk(fsp_table[1] >> 1);
+			freq_chg_cnt = 0;
+			freq_chg_pt = 0;
+		} else if(reg_val == 0xb) {
+			/* LPDDR4/4x type */
+			is_lpddr4 = 1;
+			reg_val = readl(DENALI_CTL_250);
+			if (((reg_val >> 16) & 0x3) == 1)
+				freq_chg_cnt = 2;
+			else
+				freq_chg_cnt = 3;
 
-		reg_val = readl(DENALI_PI_12);
-		if (reg_val == 0x3) {
-			freq_chg_pt = 1;
-		} else if (reg_val == 0x7) {
-			freq_chg_pt = 2;
+			reg_val = readl(DENALI_PI_12);
+			if(reg_val == 0x3)
+				freq_chg_pt = 1;
+			else if(reg_val == 0x7)
+				freq_chg_pt = 2;
+			else {
+				printf("frequency map(0x%x) is wrong, please check!\r\n", reg_val);
+				return -1;
+			}
 		} else {
-			printf("frequency map(0x%x) is wrong, please check!\r\n", reg_val);
+			printf("Incorrect DDR type configured!\r\n");
 			return -1;
 		}
 	}
@@ -129,8 +144,8 @@ int ddr_calibration(unsigned int fsp_table[3])
 		 * Polling SIM LPDDR_CTRL2 Bit phy_freq_chg_req until be 1'b1
 		 */
 		reg_val = readl(AVD_SIM_LPDDR_CTRL2);
-		phy_freq_req = (reg_val >> 7) & 0x1;
-
+		/* DFS interrupt is set */
+		phy_freq_req = ((reg_val >> 7) & 0x1) && ((reg_val >> 15) & 0x1);
 		if (phy_freq_req) {
 			phy_freq_type = reg_val & 0x1F;
 			if (phy_freq_type == 0x00) {
@@ -159,7 +174,11 @@ int ddr_calibration(unsigned int fsp_table[3])
 				if (freq_chg_pt == 2)
 					freq_chg_cnt--;
 			}
-			reg_val = readl(AVD_SIM_LPDDR_CTRL2);
+
+			/* Hardware clear the ack on falling edge of LPDDR_CTRL2:phy_freq_chg_reg */
+			/* Ensure the ack is clear before starting to poll request again */
+			while ((readl(AVD_SIM_LPDDR_CTRL2) & BIT(6)))
+				;
 		}
 	} while (1);
 
@@ -175,7 +194,65 @@ int ddr_calibration(unsigned int fsp_table[3])
 	}
 
 	debug("De-Skew PLL is locked and ready\n");
+
+	/* Change LPDDR4 FREQ1 to bypass mode if it is lower than 200MHz */
+	if(is_lpddr4 && fsp_table[1] < 400) {
+		/* Set FREQ1 to bypass mode */
+		reg_val = PHY_FREQ_SEL_MULTICAST_EN(0) | PHY_FREQ_SEL_INDEX(0);
+		writel(reg_val, DENALI_PHY_1537);
+
+		/* PHY_PLL_BYPASS=0x1 (DENALI_PHY_1624) */
+		reg_val =readl(DENALI_PHY_1624) | 0x1;
+		writel(reg_val, DENALI_PHY_1624);
+
+		/* DENALI_PHY_1625: bypass mode in PHY PLL */
+		reg_val =readl(DENALI_PHY_1625) & ~0xf;
+		writel(reg_val, DENALI_PHY_1625);
+	}
+
 	return 0;
+}
+
+static void save_dram_config(struct dram_timing_info2 *timing_info, unsigned long saved_timing_base)
+{
+	int i = 0;
+	struct dram_timing_info2 *saved_timing = (struct dram_timing_info2 *)saved_timing_base;
+	struct dram_cfg_param *cfg;
+
+	saved_timing->ctl_cfg_num = timing_info->ctl_cfg_num;
+	saved_timing->phy_f1_cfg_num = timing_info->phy_f1_cfg_num;
+	saved_timing->phy_f2_cfg_num = timing_info->phy_f2_cfg_num;
+
+	/* save the fsp table */
+	for (i = 0; i < 3; i++)
+		saved_timing->fsp_table[i] = timing_info->fsp_table[i];
+
+	cfg = (struct dram_cfg_param *)(saved_timing_base +
+					sizeof(*timing_info));
+
+	/* save ctl config */
+	saved_timing->ctl_cfg = cfg;
+	for (i = 0; i < timing_info->ctl_cfg_num; i++) {
+		cfg->reg = timing_info->ctl_cfg[i].reg;
+		cfg->val = timing_info->ctl_cfg[i].val;
+		cfg++;
+	}
+
+	/* save phy f1 config */
+	saved_timing->phy_f1_cfg = cfg;
+	for (i = 0; i < timing_info->phy_f1_cfg_num; i++) {
+		cfg->reg = timing_info->phy_f1_cfg[i].reg;
+		cfg->val = timing_info->phy_f1_cfg[i].val;
+		cfg++;
+	}
+
+	/* save phy f2 config */
+	saved_timing->phy_f2_cfg = cfg;
+	for (i = 0; i < timing_info->phy_f2_cfg_num; i++) {
+		cfg->reg = timing_info->phy_f2_cfg[i].reg;
+		cfg->val = timing_info->phy_f2_cfg[i].val;
+		cfg++;
+	}
 }
 
 int ddr_init(struct dram_timing_info2 *dram_timing)
@@ -191,6 +268,9 @@ int ddr_init(struct dram_timing_info2 *dram_timing)
 		set_ddr_clk(dram_timing->fsp_table[0] >> 1); /* Set to boot freq */
 		clrbits_le32(AVD_SIM_BASE_ADDR, 0x1); /* SIM_DDR_CTRL_DIV2_EN */
 	}
+
+	/* save the dram config into sram for low power mode */
+	save_dram_config(dram_timing, CONFIG_SAVED_DRAM_TIMING_BASE);
 
 	/* Initialize CTL registers */
 	for (i = 0; i < dram_timing->ctl_cfg_num; i++)

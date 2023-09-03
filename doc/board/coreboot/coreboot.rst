@@ -26,7 +26,7 @@ this capability yet. The command is as follows::
    $ ./build/util/cbfstool/cbfstool build/coreboot.rom add-flat-binary \
      -f u-boot-dtb.bin -n fallback/payload -c lzma -l 0x1110000 -e 0x1110000
 
-Make sure 0x1110000 matches CONFIG_SYS_TEXT_BASE, which is the symbol address
+Make sure 0x1110000 matches CONFIG_TEXT_BASE, which is the symbol address
 of _x86boot_start (in arch/x86/cpu/start.S).
 
 If you want to use ELF as the coreboot payload, change U-Boot configuration to
@@ -51,6 +51,40 @@ can be useful for running UEFI applications, for example.
 
 This has only been lightly tested.
 
+CBFS access
+-----------
+
+You can use the 'cbfs' commands to access the Coreboot filesystem::
+
+   => cbfsinit
+   => cbfsinfo
+
+   CBFS version: 0x31313132
+   ROM size: 0x100000
+   Boot block size: 0x4
+   CBFS size: 0xffdfc
+   Alignment: 64
+   Offset: 0x200
+
+   => cbfsls
+        size              type  name
+   ------------------------------------------
+          32       cbfs header  cbfs master header
+       16720                17  fallback/romstage
+       53052                17  fallback/ramstage
+         398               raw  config
+         715               raw  revision
+         117               raw  build_info
+        4044               raw  fallback/dsdt.aml
+         640       cmos layout  cmos_layout.bin
+       17804                17  fallback/postcar
+      335797           payload  fallback/payload
+      607000              null  (empty)
+       10752         bootblock  bootblock
+
+   12 file(s)
+
+   =>
 
 Memory map
 ----------
@@ -64,10 +98,59 @@ Memory map
     10000000  Memory reserved by coreboot for mapping PCI devices
               (typical size 2151000, includes framebuffer)
      1920000  CONFIG_SYS_CAR_ADDR, fake Cache-as-RAM memory, used during startup
-     1110000  CONFIG_SYS_TEXT_BASE (start address of U-Boot code, before reloc)
+     1110000  CONFIG_TEXT_BASE (start address of U-Boot code, before reloc)
       110000  CONFIG_BLOBLIST_ADDR (before being relocated)
       100000  CONFIG_PRE_CON_BUF_ADDR
        f0000  ACPI tables set up by U-Boot
               (typically redirects to 7ab10030 or similar)
          500  Location of coreboot sysinfo table, used during startup
   ==========  ==================================================================
+
+
+Debug UART
+----------
+
+It is possible to enable the debug UART with coreboot. To do this, use the
+info from the cbsysinfo command to locate the UART base. For example::
+
+   => cbsysinfo
+   ...
+   Serial I/O port: 00000000
+      base        : 00000000
+      pointer     : 767b51bc
+      type        : 2
+      base        : fe03e000
+      baud        : 0d115200
+      regwidth    : 4
+      input_hz    : 0d1843200
+      PCI addr    : 00000010
+   ...
+
+Here you can see that the UART base is fe03e000, regwidth is 4 (1 << 2) and the
+input clock is 1843200. So you can add the following CONFIG options::
+
+   CONFIG_DEBUG_UART=y
+   CONFIG_DEBUG_UART_BASE=fe03e000
+   CONFIG_DEBUG_UART_CLOCK=1843200
+   CONFIG_DEBUG_UART_SHIFT=2
+   CONFIG_DEBUG_UART_ANNOUNCE=y
+
+coreboot in CI
+--------------
+
+CI runs tests using a pre-built coreboot image. This ensures that U-Boot can
+boot as a coreboot payload, based on a known-good build of coreboot.
+
+To update the `coreboot.rom` file which is used:
+
+#. Build coreboot with `CONFIG_LINEAR_FRAMEBUFFER=y`. If using `make menuconfig`
+   this is under
+   `Devices ->Display->Framebuffer mode->Linear "high resolution" framebuffer`.
+
+#. Compress the resulting `coreboot.rom`::
+
+      xz -c /path/to/coreboot/build/coreboot.rom >coreboot.rom.xz
+
+#. Upload the file to Google drive
+
+#. Send a patch to change the file ID used by wget in the CI yaml files.

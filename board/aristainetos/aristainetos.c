@@ -9,6 +9,8 @@
  * Author: Fabio Estevam <fabio.estevam@freescale.com>
  */
 
+#include <common.h>
+#include <bmp_layout.h>
 #include <command.h>
 #include <image.h>
 #include <init.h>
@@ -28,18 +30,16 @@
 #include <bmp_logo.h>
 #include <dm/root.h>
 #include <env.h>
-#include <env_internal.h>
 #include <i2c_eeprom.h>
 #include <i2c.h>
 #include <micrel.h>
 #include <miiphy.h>
-#include <lcd.h>
 #include <led.h>
 #include <power/pmic.h>
 #include <power/regulator.h>
 #include <power/da9063_pmic.h>
 #include <splash.h>
-#include <video_fb.h>
+#include <video.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -419,7 +419,6 @@ int board_late_init(void)
 	int x, y;
 	int ret;
 
-	led_default_state();
 	splash_get_pos(&x, &y);
 	bmp_display((ulong)&bmp_logo_bitmap[0], x, y);
 
@@ -529,22 +528,3 @@ int embedded_dtb_select(void)
 	return 0;
 }
 #endif
-
-enum env_location env_get_location(enum env_operation op, int prio)
-{
-	if (op == ENVOP_SAVE || op == ENVOP_ERASE)
-		return ENVL_SPI_FLASH;
-
-	switch (prio) {
-	case 0:
-		return ENVL_NOWHERE;
-
-	case 1:
-		return ENVL_SPI_FLASH;
-
-	default:
-		return ENVL_UNKNOWN;
-	}
-
-	return ENVL_UNKNOWN;
-}

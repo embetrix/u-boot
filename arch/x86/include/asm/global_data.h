@@ -122,8 +122,11 @@ struct arch_global_data {
 	struct fsp_header *fsp_s_hdr;	/* Pointer to FSP-S header */
 #endif
 	void *itss_priv;		/* Private ITSS data pointer */
-	ulong acpi_start;		/* Start address of ACPI tables */
 	ulong coreboot_table;		/* Address of coreboot table */
+	ulong table_start;		/* Start address of x86 tables */
+	ulong table_end;		/* End address of x86 tables */
+	ulong table_start_high;		/* Start address of high x86 tables */
+	ulong table_end_high;		/* End address of high x86 tables */
 };
 
 #endif
@@ -138,7 +141,7 @@ struct arch_global_data {
 
 #define DECLARE_GLOBAL_DATA_PTR   extern struct global_data *global_data_ptr
 # else
-static inline __attribute__((no_instrument_function)) gd_t *get_fs_gd_ptr(void)
+static inline notrace gd_t *get_fs_gd_ptr(void)
 {
 	gd_t *gd_ptr;
 

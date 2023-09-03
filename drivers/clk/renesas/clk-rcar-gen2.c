@@ -17,6 +17,7 @@
 #include <log.h>
 #include <asm/global_data.h>
 #include <asm/io.h>
+#include <linux/clk-provider.h>
 
 #include <dt-bindings/clock/renesas-cpg-mssr.h>
 
@@ -25,11 +26,6 @@
 
 #define CPG_PLL0CR		0x00d8
 #define CPG_SDCKCR		0x0074
-
-struct clk_div_table {
-	u8	val;
-	u8	div;
-};
 
 /* SDHI divisors */
 static const struct clk_div_table cpg_sdh_div_table[] = {
@@ -256,7 +252,7 @@ static ulong gen2_clk_set_rate(struct clk *clk, ulong rate)
 static int gen2_clk_of_xlate(struct clk *clk, struct ofnode_phandle_args *args)
 {
 	if (args->args_count != 2) {
-		debug("Invaild args_count: %d\n", args->args_count);
+		debug("Invalid args_count: %d\n", args->args_count);
 		return -EINVAL;
 	}
 

@@ -26,21 +26,17 @@
 
 #include <linux/types.h>
 
-#ifdef CONFIG_DM_SERIAL
+#if CONFIG_IS_ENABLED(DM_SERIAL) ||  defined(CONFIG_NS16550_DYNAMIC) || \
+	defined(CONFIG_DEBUG_UART)
 /*
  * For driver model we always use one byte per register, and sort out the
- * differences in the driver
+ * differences in the driver. In the case of CONFIG_NS16550_DYNAMIC we do
+ * similar, and CONFIG_DEBUG_UART is responsible for shifts in its own manner.
  */
-#define CONFIG_SYS_NS16550_REG_SIZE (-1)
-#endif
-
-#ifdef CONFIG_NS16550_DYNAMIC
 #define UART_REG(x)	unsigned char x
 #else
 #if !defined(CONFIG_SYS_NS16550_REG_SIZE) || (CONFIG_SYS_NS16550_REG_SIZE == 0)
 #error "Please define NS16550 registers size."
-#elif defined(CONFIG_SYS_NS16550_MEM32) && !defined(CONFIG_DM_SERIAL)
-#define UART_REG(x) u32 x
 #elif (CONFIG_SYS_NS16550_REG_SIZE > 0)
 #define UART_REG(x)						   \
 	unsigned char prepad_##x[CONFIG_SYS_NS16550_REG_SIZE - 1]; \
@@ -113,7 +109,7 @@ struct ns16550 {
 	UART_REG(scr);		/* 10*/
 	UART_REG(ssr);		/* 11*/
 #endif
-#ifdef CONFIG_DM_SERIAL
+#if CONFIG_IS_ENABLED(DM_SERIAL)
 	struct ns16550_plat *plat;
 #endif
 };
@@ -237,7 +233,7 @@ void ns16550_reinit(struct ns16550 *com_port, int baud_divisor);
  * @port:	UART port
  * @clock:	UART input clock speed in Hz
  * @baudrate:	Required baud rate
- * @return baud rate divisor that should be used
+ * Return: baud rate divisor that should be used
  */
 int ns16550_calc_divisor(struct ns16550 *port, int clock, int baudrate);
 
@@ -257,7 +253,7 @@ int ns16550_serial_of_to_plat(struct udevice *dev);
  * ns16550_serial_probe() - probe a serial port
  *
  * This sets up the serial port ready for use, except for the baud rate
- * @return 0, or -ve on error
+ * Return: 0, or -ve on error
  */
 int ns16550_serial_probe(struct udevice *dev);
 

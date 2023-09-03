@@ -254,7 +254,7 @@ int checkboard(void)
 
 #ifdef CONFIG_SPL_BUILD
 
-#if defined(CONFIG_SPL_MMC_SUPPORT)
+#if defined(CONFIG_SPL_MMC)
 int board_mmc_init(struct bd_info *bd)
 {
 	ci20_mux_mmc();
@@ -349,10 +349,6 @@ static const struct jz4780_ddr_config H5TQ2G83CFR_48_config = {
 	.pullup = 0x0e,
 	.pulldn = 0x0e,
 };
-
-#if (CONFIG_SYS_MHZ != 1200)
-#error No DDR configuration for CPU speed
-#endif
 
 const struct jz4780_ddr_config *jz4780_get_ddr_config(void)
 {

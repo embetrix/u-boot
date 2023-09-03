@@ -58,8 +58,17 @@ static int fsl_pcie_read_config(const struct udevice *bus, pci_dev_t bdf,
 		return 0;
 	}
 
-	bdf = bdf - PCI_BDF(dev_seq(bus), 0, 0);
-	val = bdf | (offset & 0xfc) | ((offset & 0xf00) << 16) | 0x80000000;
+	/* Skip Freescale PCIe controller's PEXCSRBAR register */
+	if (PCI_BUS(bdf) - dev_seq(bus) == 0 &&
+	    PCI_DEV(bdf) == 0 && PCI_FUNC(bdf) == 0 &&
+	    (offset & ~3) == PCI_BASE_ADDRESS_0) {
+		*valuep = 0;
+		return 0;
+	}
+
+	val = PCI_CONF1_EXT_ADDRESS(PCI_BUS(bdf) - dev_seq(bus),
+				    PCI_DEV(bdf), PCI_FUNC(bdf),
+				    offset);
 	out_be32(&regs->cfg_addr, val);
 
 	sync();
@@ -94,8 +103,15 @@ static int fsl_pcie_write_config(struct udevice *bus, pci_dev_t bdf,
 	if (fsl_pcie_addr_valid(pcie, bdf))
 		return 0;
 
-	bdf = bdf - PCI_BDF(dev_seq(bus), 0, 0);
-	val = bdf | (offset & 0xfc) | ((offset & 0xf00) << 16) | 0x80000000;
+	/* Skip Freescale PCIe controller's PEXCSRBAR register */
+	if (PCI_BUS(bdf) - dev_seq(bus) == 0 &&
+	    PCI_DEV(bdf) == 0 && PCI_FUNC(bdf) == 0 &&
+	    (offset & ~3) == PCI_BASE_ADDRESS_0)
+		return 0;
+
+	val = PCI_CONF1_EXT_ADDRESS(PCI_BUS(bdf) - dev_seq(bus),
+				    PCI_DEV(bdf), PCI_FUNC(bdf),
+				    offset);
 	out_be32(&regs->cfg_addr, val);
 
 	sync();
@@ -341,8 +357,8 @@ static int fsl_pcie_setup_outbound_wins(struct fsl_pcie *pcie)
 
 static int fsl_pcie_setup_inbound_wins(struct fsl_pcie *pcie)
 {
-	phys_addr_t phys_start = CONFIG_SYS_PCI_MEMORY_PHYS;
-	pci_addr_t bus_start = CONFIG_SYS_PCI_MEMORY_BUS;
+	phys_addr_t phys_start = CFG_SYS_PCI_MEMORY_PHYS;
+	pci_addr_t bus_start = CFG_SYS_PCI_MEMORY_BUS;
 	u64 sz = min((u64)gd->ram_size, (1ull << 32));
 	pci_size_t pci_sz;
 	int idx;
@@ -365,8 +381,8 @@ static int fsl_pcie_setup_inbound_wins(struct fsl_pcie *pcie)
 		sz = 2ull << __ilog2_u64(sz);
 
 	fsl_pcie_setup_inbound_win(pcie, idx--, true,
-				   CONFIG_SYS_PCI_MEMORY_PHYS,
-				   CONFIG_SYS_PCI_MEMORY_BUS, sz);
+				   CFG_SYS_PCI_MEMORY_PHYS,
+				   CFG_SYS_PCI_MEMORY_BUS, sz);
 #if defined(CONFIG_PHYS_64BIT) && defined(CONFIG_SYS_PCI_64BIT)
 	/*
 	 * On 64-bit capable systems, set up a mapping for all of DRAM
@@ -378,12 +394,12 @@ static int fsl_pcie_setup_inbound_wins(struct fsl_pcie *pcie)
 		pci_sz = 1ull << (__ilog2_u64(gd->ram_size) + 1);
 
 	dev_dbg(pcie->bus, "R64 bus_start: %llx phys_start: %llx size: %llx\n",
-		(u64)CONFIG_SYS_PCI64_MEMORY_BUS,
-		(u64)CONFIG_SYS_PCI_MEMORY_PHYS, (u64)pci_sz);
+		(u64)CFG_SYS_PCI64_MEMORY_BUS,
+		(u64)CFG_SYS_PCI_MEMORY_PHYS, (u64)pci_sz);
 
 	fsl_pcie_setup_inbound_win(pcie, idx--, true,
-				   CONFIG_SYS_PCI_MEMORY_PHYS,
-				   CONFIG_SYS_PCI64_MEMORY_BUS, pci_sz);
+				   CFG_SYS_PCI_MEMORY_PHYS,
+				   CFG_SYS_PCI64_MEMORY_BUS, pci_sz);
 #endif
 
 	return 0;
@@ -461,7 +477,7 @@ static int fsl_pcie_init_port(struct fsl_pcie *pcie)
 	if (!fsl_pcie_link_up(pcie)) {
 		serdes_corenet_t *srds_regs;
 
-		srds_regs = (void *)CONFIG_SYS_FSL_CORENET_SERDES_ADDR;
+		srds_regs = (void *)CFG_SYS_FSL_CORENET_SERDES_ADDR;
 		val_32 = in_be32(&srds_regs->srdspccr0);
 
 		if ((val_32 >> 28) == 3) {
@@ -530,7 +546,7 @@ static int fsl_pcie_fixup_classcode(struct fsl_pcie *pcie)
 
 	fsl_pcie_hose_read_config_dword(pcie, classcode_reg, &val);
 	val &= 0xff;
-	val |= PCI_CLASS_BRIDGE_PCI << 16;
+	val |= PCI_CLASS_BRIDGE_PCI_NORMAL << 8;
 	fsl_pcie_hose_write_config_dword(pcie, classcode_reg, val);
 
 	if (pcie->block_rev >= PEX_IP_BLK_REV_3_0)
@@ -644,7 +660,7 @@ static struct fsl_pcie_data t2080_data = {
 };
 
 static const struct udevice_id fsl_pcie_ids[] = {
-	{ .compatible = "fsl,pcie-mpc8548", .data = (ulong)&p1_p2_data },
+	{ .compatible = "fsl,mpc8548-pcie", .data = (ulong)&p1_p2_data },
 	{ .compatible = "fsl,pcie-p1_p2", .data = (ulong)&p1_p2_data },
 	{ .compatible = "fsl,pcie-p2041", .data = (ulong)&p2041_data },
 	{ .compatible = "fsl,pcie-p3041", .data = (ulong)&p2041_data },

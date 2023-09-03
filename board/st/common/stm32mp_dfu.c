@@ -37,7 +37,7 @@ static void board_get_alt_info_mmc(struct udevice *dev, char *buf)
 	if (!desc)
 		return;
 
-	name = blk_get_if_type_name(desc->if_type);
+	name = blk_get_uclass_name(desc->uclass_id);
 	devnum = desc->devnum;
 	len = strlen(buf);
 
@@ -57,7 +57,7 @@ static void board_get_alt_info_mmc(struct udevice *dev, char *buf)
 		first = false;
 	}
 
-	for (p = 1; p < MAX_SEARCH_PARTITIONS; p++) {
+	for (p = 1; p <= MAX_SEARCH_PARTITIONS; p++) {
 		if (part_get_info(desc, p, &info))
 			continue;
 		if (!first)
@@ -123,13 +123,17 @@ void set_dfu_alt_info(char *interface, char *devstr)
 			board_get_alt_info_mmc(dev, buf);
 	}
 
-	if (CONFIG_IS_ENABLED(MTD)) {
+	if (IS_ENABLED(CONFIG_MTD)) {
 		/* probe all MTD devices */
 		mtd_probe_devices();
 
 		/* probe SPI flash device on a bus */
 		if (!uclass_get_device(UCLASS_SPI_FLASH, 0, &dev)) {
 			mtd = get_mtd_device_nm("nor0");
+			if (!IS_ERR_OR_NULL(mtd))
+				board_get_alt_info_mtd(mtd, buf);
+
+			mtd = get_mtd_device_nm("nor1");
 			if (!IS_ERR_OR_NULL(mtd))
 				board_get_alt_info_mtd(mtd, buf);
 		}

@@ -422,6 +422,8 @@ struct cb_tsc_info {
 #define CB_TAG_SERIALNO			0x002a
 #define CB_MAX_SERIALNO_LENGTH		32
 
+#define CB_TAG_ACPI_RSDP		0x0043
+
 #define CB_TAG_CMOS_OPTION_TABLE	0x00c8
 
 struct cb_cmos_option_table {
@@ -554,7 +556,7 @@ void write_coreboot_table(u32 addr, struct memory_area *cfg_tables);
 /**
  * locate_coreboot_table() - Try to find coreboot tables at standard locations
  *
- * @return address of table that was found, or -ve error number
+ * Return: address of table that was found, or -ve error number
  */
 long locate_coreboot_table(void);
 

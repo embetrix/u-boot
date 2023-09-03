@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2019 NXP
+ * Copyright 2019, 2021 NXP
  */
 
 #include "imx8mp-u-boot.dtsi"
@@ -9,7 +9,7 @@
 	wdt-reboot {
 		compatible = "wdt-reboot";
 		wdt = <&wdog1>;
-		u-boot,dm-spl;
+		bootph-pre-ram;
 	};
 	firmware {
 		optee {
@@ -24,91 +24,117 @@
 };
 
 &reg_usdhc2_vmmc {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &pinctrl_uart2 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &pinctrl_usdhc2_gpio {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &pinctrl_usdhc2 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &pinctrl_usdhc3 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
+};
+
+&pinctrl_wdog {
+	bootph-pre-ram;
 };
 
 &gpio1 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &gpio2 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &gpio3 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &gpio4 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &gpio5 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &uart2 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
+};
+
+&crypto {
+	bootph-pre-ram;
+};
+
+&sec_jr0 {
+	bootph-pre-ram;
+};
+
+&sec_jr1 {
+	bootph-pre-ram;
+};
+
+&sec_jr2 {
+	bootph-pre-ram;
 };
 
 &i2c1 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &i2c2 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &i2c3 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &i2c4 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &i2c5 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &i2c6 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &usdhc1 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 };
 
 &usdhc2 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 	sd-uhs-sdr104;
 	sd-uhs-ddr50;
 };
 
 &usdhc3 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
 	mmc-hs400-1_8v;
 	mmc-hs400-enhanced-strobe;
 };
 
 &wdog1 {
-	u-boot,dm-spl;
+	bootph-pre-ram;
+};
+
+&ethphy0 {
+	reset-gpios = <&gpio4 22 GPIO_ACTIVE_LOW>;
+	reset-delay-us = <15000>;
+	reset-post-delay-us = <100000>;
 };
 
 &fec {

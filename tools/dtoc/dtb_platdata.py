@@ -35,9 +35,9 @@ PROP_IGNORE_LIST = [
     'linux,phandle',
     "status",
     'phandle',
-    'u-boot,dm-pre-reloc',
-    'u-boot,dm-tpl',
-    'u-boot,dm-spl',
+    'bootph-all',
+    'bootph-pre-sram',
+    'bootph-pre-ram',
 ]
 
 # C type declarations for the types we support
@@ -62,6 +62,7 @@ VAL_PREFIX = 'dtv_'
 # a phandle property.
 PHANDLE_PROPS = {
     'clocks': '#clock-cells',
+    'interrupts-extended': '#interrupt-cells',
     'gpios': '#gpio-cells',
     'sandbox,emul': '#emul-cells',
     }
@@ -71,7 +72,7 @@ class Ftype(IntEnum):
 
 
 # This holds information about each type of output file dtoc can create
-# type: Type of file (Ftype)
+# ftype: Type of file (Ftype)
 # fname: Filename excluding directory, e.g. 'dt-plat.c'
 # hdr_comment: Comment explaining the purpose of the file
 OutputFile = collections.namedtuple('OutputFile',
@@ -441,7 +442,7 @@ class DtbPlatdata():
         """
         parent = node.parent
         if parent and not parent.props:
-            raise ValueError("Parent node '%s' has no properties - do you need u-boot,dm-spl or similar?" %
+            raise ValueError("Parent node '%s' has no properties - do you need bootph-pre-ram or similar?" %
                              parent.path)
         num_addr, num_size = 2, 2
         if parent:
@@ -753,7 +754,7 @@ class DtbPlatdata():
                 # This might indicate that the parent node is not in the
                 # SPL/TPL devicetree but the child is. For example if we are
                 # dealing with of-platdata in TPL, the parent has a
-                # u-boot,dm-tpl tag but the child has u-boot,dm-pre-reloc. In
+                # bootph-pre-sram tag but the child has bootph-all. In
                 # this case the child node exists in TPL but the parent does
                 # not.
                 raise ValueError("Node '%s' requires parent node '%s' but it is not in the valid list" %

@@ -11,6 +11,7 @@
 #include <linux/compiler.h>
 #include <linux/kernel.h>
 #include <linux/log2.h>
+#include <lmb.h>
 #include <asm/arcregs.h>
 #include <asm/arc-bcr.h>
 #include <asm/cache.h>
@@ -475,9 +476,9 @@ static void __slc_rgn_op(unsigned long paddr, unsigned long sz, const int op)
 static void arc_ioc_setup(void)
 {
 	/* IOC Aperture start is equal to DDR start */
-	unsigned int ap_base = CONFIG_SYS_SDRAM_BASE;
+	unsigned int ap_base = CFG_SYS_SDRAM_BASE;
 	/* IOC Aperture size is equal to DDR size */
-	long ap_size = CONFIG_SYS_SDRAM_SIZE;
+	long ap_size = CFG_SYS_SDRAM_SIZE;
 
 	/* Unsupported configuration. See [ NOTE 2 ] for more details. */
 	if (!slc_exists())
@@ -819,4 +820,17 @@ void sync_n_cleanup_cache_all(void)
 	}
 
 	__ic_entire_invalidate();
+}
+
+static ulong get_sp(void)
+{
+	ulong ret;
+
+	asm("mov %0, sp" : "=r"(ret) : );
+	return ret;
+}
+
+void arch_lmb_reserve(struct lmb *lmb)
+{
+	arch_lmb_reserve_generic(lmb, get_sp(), gd->ram_top, 4096);
 }

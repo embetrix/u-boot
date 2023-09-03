@@ -15,30 +15,6 @@ struct video_priv;
 #define VID_TO_PIXEL(x)	((x) / VID_FRAC_DIV)
 #define VID_TO_POS(x)	((x) * VID_FRAC_DIV)
 
-/*
- * The 16 colors supported by the console
- */
-enum color_idx {
-	VID_BLACK = 0,
-	VID_RED,
-	VID_GREEN,
-	VID_BROWN,
-	VID_BLUE,
-	VID_MAGENTA,
-	VID_CYAN,
-	VID_LIGHT_GRAY,
-	VID_GRAY,
-	VID_LIGHT_RED,
-	VID_LIGTH_GREEN,
-	VID_YELLOW,
-	VID_LIGHT_BLUE,
-	VID_LIGHT_MAGENTA,
-	VID_LIGHT_CYAN,
-	VID_WHITE,
-
-	VID_COLOR_COUNT
-};
-
 /**
  * struct vidconsole_priv - uclass-private data about a console device
  *
@@ -84,6 +60,47 @@ struct vidconsole_priv {
 	int row_saved;
 	int col_saved;
 	char escape_buf[32];
+};
+
+/**
+ * struct vidfont_info - information about a font
+ *
+ * @name: Font name, e.g. nimbus_sans_l_regular
+ */
+struct vidfont_info {
+	const char *name;
+};
+
+/**
+ * struct vidconsole_colour - Holds colour information
+ *
+ * @colour_fg:	Foreground colour (pixel value)
+ * @colour_bg:	Background colour (pixel value)
+ */
+struct vidconsole_colour {
+	u32 colour_fg;
+	u32 colour_bg;
+};
+
+/**
+ * struct vidconsole_bbox - Bounding box of text
+ *
+ * This describes the bounding box of something, measured in pixels. The x0/y0
+ * pair is inclusive; the x1/y2 pair is exclusive, meaning that it is one pixel
+ * beyond the extent of the object
+ *
+ * @valid: Values are valid (bounding box is known)
+ * @x0: left x position, in pixels from left side
+ * @y0: top y position, in pixels from top
+ * @x1: right x position + 1
+ * @y1: botton y position + 1
+ */
+struct vidconsole_bbox {
+	bool valid;
+	int x0;
+	int y0;
+	int x1;
+	int y1;
 };
 
 /**
@@ -135,6 +152,9 @@ struct vidconsole_ops {
 	/**
 	 * entry_start() - Indicate that text entry is starting afresh
 	 *
+	 * @dev:	Device to adjust
+	 * Returns: 0 on success, -ve on error
+	 *
 	 * Consoles which use proportional fonts need to track the position of
 	 * each character output so that backspace will return to the correct
 	 * place. This method signals to the console driver that a new entry
@@ -147,6 +167,9 @@ struct vidconsole_ops {
 	/**
 	 * backspace() - Handle erasing the last character
 	 *
+	 * @dev:	Device to adjust
+	 * Returns: 0 on success, -ve on error
+	 *
 	 * With proportional fonts the vidconsole uclass cannot itself erase
 	 * the previous character. This optional method will be called when
 	 * a backspace is needed. The driver should erase the previous
@@ -157,10 +180,107 @@ struct vidconsole_ops {
 	 * characters.
 	 */
 	int (*backspace)(struct udevice *dev);
+
+	/**
+	 * get_font() - Obtain information about a font (optional)
+	 *
+	 * @dev:	Device to check
+	 * @seq:	Font number to query (0=first, 1=second, etc.)
+	 * @info:	Returns font information on success
+	 * Returns: 0 on success, -ENOENT if no such font
+	 */
+	int (*get_font)(struct udevice *dev, int seq,
+			struct vidfont_info *info);
+
+	/**
+	 * get_font_size() - get the current font name and size
+	 *
+	 * @dev: vidconsole device
+	 * @sizep: Place to put the font size (nominal height in pixels)
+	 * Returns: Current font name
+	 */
+	const char *(*get_font_size)(struct udevice *dev, uint *sizep);
+
+	/**
+	 * select_font() - Select a particular font by name / size
+	 *
+	 * @dev:	Device to adjust
+	 * @name:	Font name to use (NULL to use default)
+	 * @size:	Font size to use (0 to use default)
+	 * Returns: 0 on success, -ENOENT if no such font
+	 */
+	int (*select_font)(struct udevice *dev, const char *name, uint size);
+
+	/**
+	 * measure() - Measure the bounds of some text
+	 *
+	 * @dev:	Device to adjust
+	 * @name:	Font name to use (NULL to use default)
+	 * @size:	Font size to use (0 to use default)
+	 * @text:	Text to measure
+	 * @bbox:	Returns bounding box of text, assuming it is positioned
+	 *		at 0,0
+	 * Returns: 0 on success, -ENOENT if no such font
+	 */
+	int (*measure)(struct udevice *dev, const char *name, uint size,
+		       const char *text, struct vidconsole_bbox *bbox);
 };
 
 /* Get a pointer to the driver operations for a video console device */
 #define vidconsole_get_ops(dev)  ((struct vidconsole_ops *)(dev)->driver->ops)
+
+/**
+ * vidconsole_get_font() - Obtain information about a font
+ *
+ * @dev:	Device to check
+ * @seq:	Font number to query (0=first, 1=second, etc.)
+ * @info:	Returns font information on success
+ * Returns: 0 on success, -ENOENT if no such font, -ENOSYS if there is no such
+ * method
+ */
+int vidconsole_get_font(struct udevice *dev, int seq,
+			struct vidfont_info *info);
+
+/**
+ * vidconsole_select_font() - Select a particular font by name / size
+ *
+ * @dev:	Device to adjust
+ * @name:	Font name to use (NULL to use default)
+ * @size:	Font size to use (0 to use default)
+ */
+int vidconsole_select_font(struct udevice *dev, const char *name, uint size);
+
+/*
+ * vidconsole_measure() - Measuring the bounding box of some text
+ *
+ * @dev: Console device to use
+ * @name: Font name, NULL for default
+ * @size: Font size, ignored if @name is NULL
+ * @text: Text to measure
+ * @bbox: Returns nounding box of text
+ * Returns: 0 if OK, -ve on error
+ */
+int vidconsole_measure(struct udevice *dev, const char *name, uint size,
+		       const char *text, struct vidconsole_bbox *bbox);
+
+/**
+ * vidconsole_push_colour() - Temporarily change the font colour
+ *
+ * @dev:	Device to adjust
+ * @fg:		Foreground colour to select
+ * @bg:		Background colour to select
+ * @old:	Place to store the current colour, so it can be restored
+ */
+void vidconsole_push_colour(struct udevice *dev, enum colour_idx fg,
+			    enum colour_idx bg, struct vidconsole_colour *old);
+
+/**
+ * vidconsole_pop_colour() - Restore the original colour
+ *
+ * @dev:	Device to adjust
+ * @old:	Old colour to be restored
+ */
+void vidconsole_pop_colour(struct udevice *dev, struct vidconsole_colour *old);
 
 /**
  * vidconsole_putc_xy() - write a single character to a position
@@ -170,7 +290,7 @@ struct vidconsole_ops {
  *		is the X position multipled by VID_FRAC_DIV.
  * @y:		Pixel Y position (0=top-most pixel)
  * @ch:		Character to write
- * @return number of fractional pixels that the cursor should move,
+ * Return: number of fractional pixels that the cursor should move,
  * if all is OK, -EAGAIN if we ran out of space on this line, other -ve
  * on error
  */
@@ -183,7 +303,7 @@ int vidconsole_putc_xy(struct udevice *dev, uint x, uint y, char ch);
  * @rowdst:	Destination text row (0=top)
  * @rowsrc:	Source start text row
  * @count:	Number of text rows to move
- * @return 0 if OK, -ve on error
+ * Return: 0 if OK, -ve on error
  */
 int vidconsole_move_rows(struct udevice *dev, uint rowdst, uint rowsrc,
 			 uint count);
@@ -196,7 +316,7 @@ int vidconsole_move_rows(struct udevice *dev, uint rowdst, uint rowsrc,
  * @dev:	Device to adjust
  * @row:	Text row to adjust (0=top)
  * @clr:	Raw colour (pixel value) to write to each pixel
- * @return 0 if OK, -ve on error
+ * Return: 0 if OK, -ve on error
  */
 int vidconsole_set_row(struct udevice *dev, uint row, int clr);
 
@@ -212,7 +332,7 @@ int vidconsole_set_row(struct udevice *dev, uint row, int clr);
  *
  * @dev:	Device to adjust
  * @ch:		Character to write
- * @return 0 if OK, -ve on error
+ * Return: 0 if OK, -ve on error
  */
 int vidconsole_put_char(struct udevice *dev, char ch);
 
@@ -228,7 +348,7 @@ int vidconsole_put_char(struct udevice *dev, char ch);
  *
  * @dev:	Device to adjust
  * @str:	String to write
- * @return 0 if OK, -ve on error
+ * Return: 0 if OK, -ve on error
  */
 int vidconsole_put_string(struct udevice *dev, const char *str);
 
@@ -238,23 +358,51 @@ int vidconsole_put_string(struct udevice *dev, const char *str);
  * @dev:	Device to adjust
  * @col:	New cursor text column
  * @row:	New cursor text row
- * @return 0 if OK, -ve on error
+ * Return: 0 if OK, -ve on error
  */
 void vidconsole_position_cursor(struct udevice *dev, unsigned col,
 				unsigned row);
 
 /**
- * vid_console_color() - convert a color code to a pixel's internal
- * representation
+ * vidconsole_clear_and_reset() - Clear the console and reset the cursor
  *
- * The caller has to guarantee that the color index is less than
- * VID_COLOR_COUNT.
+ * The cursor is placed at the start of the console
  *
- * @priv	private data of the console device
- * @idx		color index
- * @return	color value
+ * @dev:	vidconsole device to adjust
  */
-u32 vid_console_color(struct video_priv *priv, unsigned int idx);
+int vidconsole_clear_and_reset(struct udevice *dev);
+
+/**
+ * vidconsole_set_cursor_pos() - set cursor position
+ *
+ * The cursor is set to the new position and the start-of-line information is
+ * updated to the same position, so that a newline will return to @x
+ *
+ * @dev:	video console device to update
+ * @x:		x position from left in pixels
+ * @y:		y position from top in pixels
+ */
+void vidconsole_set_cursor_pos(struct udevice *dev, int x, int y);
+
+/**
+ * vidconsole_list_fonts() - List the available fonts
+ *
+ * @dev: vidconsole device to check
+ *
+ * This shows a list of fonts known by this vidconsole. The list is displayed on
+ * the console (not necessarily @dev but probably)
+ */
+void vidconsole_list_fonts(struct udevice *dev);
+
+/**
+ * vidconsole_get_font_size() - get the current font name and size
+ *
+ * @dev: vidconsole device
+ * @sizep: Place to put the font size (nominal height in pixels)
+ * @name: pointer to font name, a placeholder for result
+ * Return: 0 if OK, -ENOSYS if not implemented in driver
+ */
+int vidconsole_get_font_size(struct udevice *dev, const char **name, uint *sizep);
 
 #ifdef CONFIG_VIDEO_COPY
 /**
@@ -268,7 +416,7 @@ u32 vid_console_color(struct video_priv *priv, unsigned int idx);
  * @dev: Vidconsole device being updated
  * @from: Start/end address within the framebuffer (->fb)
  * @to: Other address within the frame buffer
- * @return 0 if OK, -EFAULT if the start address is before the start of the
+ * Return: 0 if OK, -EFAULT if the start address is before the start of the
  *	frame buffer start
  */
 int vidconsole_sync_copy(struct udevice *dev, void *from, void *to);
@@ -283,12 +431,15 @@ int vidconsole_sync_copy(struct udevice *dev, void *from, void *to);
  * @dst: Destination address within the framebuffer (->fb)
  * @src: Source address within the framebuffer (->fb)
  * @size: Number of bytes to transfer
- * @return 0 if OK, -EFAULT if the start address is before the start of the
+ * Return: 0 if OK, -EFAULT if the start address is before the start of the
  *	frame buffer start
  */
 int vidconsole_memmove(struct udevice *dev, void *dst, const void *src,
 		       int size);
 #else
+
+#include <string.h>
+
 static inline int vidconsole_sync_copy(struct udevice *dev, void *from,
 				       void *to)
 {

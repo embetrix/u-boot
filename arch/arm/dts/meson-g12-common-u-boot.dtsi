@@ -5,8 +5,15 @@
  */
 
 / {
+	/* Keep HW order from U-Boot */
+	aliases {
+		/delete-property/ mmc0;
+		/delete-property/ mmc1;
+		/delete-property/ mmc2;
+	};
+
 	soc {
-		u-boot,dm-pre-reloc;
+		bootph-all;
 	};
 };
 
@@ -19,7 +26,7 @@
 	      <0x0 0xff63c000 0x0 0x1000>,
 	      <0x0 0xff638000 0x0 0x400>;
 	reg-names = "vpu", "hhi", "dmc";
-	u-boot,dm-pre-reloc;
+	bootph-all;
 };
 
 &hdmi_tx {

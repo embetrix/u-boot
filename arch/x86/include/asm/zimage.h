@@ -39,7 +39,7 @@
  * @kernel_size: Size of kernel including setup block (or 0 if the kernel is
  *	new enough to have a 'syssize' value)
  * @load_addressp: Returns the address where the kernel has been loaded
- * @return address of setup block, or NULL if something went wrong
+ * Return: address of setup block, or NULL if something went wrong
  */
 struct boot_params *load_zimage(char *image, unsigned long kernel_size,
 				ulong *load_addressp);
@@ -57,7 +57,7 @@ struct boot_params *load_zimage(char *image, unsigned long kernel_size,
  *	BZIMAGE_LOAD_ADDR or ZIMAGE_LOAD_ADDR
  * @cmdline_force: Address of 'override' command line, or 0 to use the one in
  *	the *	setup block
- * @return 0 (always)
+ * Return: 0 (always)
  */
 int setup_zimage(struct boot_params *setup_base, char *cmd_line, int auto_boot,
 		 ulong initrd_addr, ulong initrd_size, ulong cmdline_force);
@@ -72,7 +72,31 @@ int setup_zimage(struct boot_params *setup_base, char *cmd_line, int auto_boot,
  */
 void zimage_dump(struct boot_params *base_ptr);
 
-void setup_video(struct screen_info *screen_info);
-void setup_efi_info(struct efi_info *efi_info);
+/**
+ * zboot_start() - Boot a zimage
+ *
+ * Boot a zimage, given the component parts
+ *
+ * @addr: Address where the bzImage is moved before booting, either
+ *	BZIMAGE_LOAD_ADDR or ZIMAGE_LOAD_ADDR
+ * @base: Pointer to the boot parameters, typically at address
+ *	DEFAULT_SETUP_BASE
+ * @initrd: Address of the initial ramdisk, or 0 if none
+ * @initrd_size: Size of the initial ramdisk, or 0 if none
+ * @cmdline: Command line to use for booting
+ * Return: -EFAULT on error (normally it does not return)
+ */
+int zboot_start(ulong addr, ulong size, ulong initrd, ulong initrd_size,
+		ulong base, char *cmdline);
+
+/*
+ * zimage_get_kernel_version() - Get the version string from a kernel
+ *
+ * @params: boot_params pointer
+ * @kernel_base: base address of kernel
+ * Return: Kernel version as a NUL-terminated string
+ */
+const char *zimage_get_kernel_version(struct boot_params *params,
+				      void *kernel_base);
 
 #endif

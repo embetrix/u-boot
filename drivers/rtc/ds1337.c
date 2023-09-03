@@ -184,13 +184,13 @@ void rtc_reset (void)
 static
 uchar rtc_read (uchar reg)
 {
-	return (i2c_reg_read (CONFIG_SYS_I2C_RTC_ADDR, reg));
+	return (i2c_reg_read (CFG_SYS_I2C_RTC_ADDR, reg));
 }
 
 
 static void rtc_write (uchar reg, uchar val)
 {
-	i2c_reg_write (CONFIG_SYS_I2C_RTC_ADDR, reg, val);
+	i2c_reg_write (CFG_SYS_I2C_RTC_ADDR, reg, val);
 }
 #else
 static uchar rtc_read(struct udevice *dev, uchar reg)
@@ -306,7 +306,7 @@ static const struct rtc_ops ds1337_rtc_ops = {
 static const struct udevice_id ds1337_rtc_ids[] = {
 	{ .compatible = "ds1337" },
 	{ .compatible = "ds1338" },
-	{ .compatible = "ds1338" },
+	{ .compatible = "ds1339" },
 	{ }
 };
 

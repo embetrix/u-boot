@@ -9,7 +9,6 @@
 
 #include <common.h>
 #include <eeprom.h>
-#include <image.h>
 #include <asm/global_data.h>
 #include <dm/uclass.h>
 #include <env.h>
@@ -20,7 +19,6 @@
 #include <linux/errno.h>
 #include <spl.h>
 #include <usb.h>
-#include <asm/omap_sec_common.h>
 #include <asm/arch/clock.h>
 #include <asm/arch/sys_proto.h>
 #include <asm/arch/mux.h>
@@ -56,7 +54,7 @@ void do_board_detect(void)
 }
 #endif
 
-#ifndef CONFIG_SKIP_LOWLEVEL_INIT
+#if !CONFIG_IS_ENABLED(SKIP_LOWLEVEL_INIT)
 
 const struct dpll_params dpll_mpu[NUM_CRYSTAL_FREQ][NUM_OPPS] = {
 	{	/* 19.2 MHz */
@@ -393,13 +391,8 @@ void scale_vcores_generic(u32 m)
 {
 	int mpu_vdd, ddr_volt;
 
-#if !CONFIG_IS_ENABLED(DM_I2C)
-	if (i2c_probe(TPS65218_CHIP_PM))
-		return;
-#else
 	if (power_tps65218_init(0))
 		return;
-#endif
 
 	switch (m) {
 	case 1000:
@@ -451,13 +444,8 @@ void scale_vcores_idk(u32 m)
 {
 	int mpu_vdd;
 
-#if !CONFIG_IS_ENABLED(DM_I2C)
-	if (i2c_probe(TPS62362_I2C_ADDR))
-		return;
-#else
 	if (power_tps62362_init(0))
 		return;
-#endif
 
 	switch (m) {
 	case 1000:
@@ -492,10 +480,6 @@ void gpi2c_init(void)
 
 	if (first_time) {
 		enable_i2c0_pin_mux();
-#if !CONFIG_IS_ENABLED(DM_I2C)
-		i2c_init(CONFIG_SYS_OMAP24_I2C_SPEED,
-			 CONFIG_SYS_OMAP24_I2C_SLAVE);
-#endif
 		first_time = false;
 	}
 }
@@ -632,28 +616,15 @@ void sdram_init(void)
 int power_init_board(void)
 {
 	int rc;
-#if !CONFIG_IS_ENABLED(DM_I2C)
-	struct pmic *p = NULL;
-#endif
 	if (board_is_idk()) {
 		rc = power_tps62362_init(0);
 		if (rc)
 			goto done;
-#if !CONFIG_IS_ENABLED(DM_I2C)
-		p = pmic_get("TPS62362");
-		if (!p || pmic_probe(p))
-			goto done;
-#endif
 		puts("PMIC:  TPS62362\n");
 	} else {
 		rc = power_tps65218_init(0);
 		if (rc)
 			goto done;
-#if !CONFIG_IS_ENABLED(DM_I2C)
-		p = pmic_get("TPS65218_PMIC");
-		if (!p || pmic_probe(p))
-			goto done;
-#endif
 		puts("PMIC:  TPS65218\n");
 	}
 done:
@@ -666,7 +637,7 @@ int board_init(void)
 	u32 mreqprio_0, mreqprio_1, modena_init0_bw_fractional,
 	    modena_init0_bw_integer, modena_init0_watermark_0;
 
-	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+	gd->bd->bi_boot_params = CFG_SYS_SDRAM_BASE + 0x100;
 	gpmc_init();
 
 	/*
@@ -893,19 +864,4 @@ int embedded_dtb_select(void)
 
 	return 0;
 }
-#endif
-
-#ifdef CONFIG_TI_SECURE_DEVICE
-void board_fit_image_post_process(const void *fit, int node, void **p_image,
-				  size_t *p_size)
-{
-	secure_boot_verify_image(p_image, p_size);
-}
-
-void board_tee_image_process(ulong tee_image, size_t tee_size)
-{
-	secure_tee_install((u32)tee_image);
-}
-
-U_BOOT_FIT_LOADABLE_HANDLER(IH_TYPE_TEE, board_tee_image_process);
 #endif

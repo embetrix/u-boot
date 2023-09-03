@@ -11,6 +11,7 @@
 
 #include <common.h>
 #include <errno.h>
+#include <malloc.h>
 #include <linux/ctype.h>
 
 /* from lib/kstrtox.c */
@@ -42,7 +43,7 @@ static const char *_parse_integer_fixup_radix(const char *s, uint *basep)
  * This ignore case
  *
  * @ch: Character to convert (expects '0'..'9', 'a'..'f' or 'A'..'F')
- * @return value of digit (0..0xf) or 255 if the character is invalid
+ * Return: value of digit (0..0xf) or 255 if the character is invalid
  */
 static uint decode_digit(int ch)
 {
@@ -183,20 +184,31 @@ long long simple_strtoll(const char *cp, char **endp, unsigned int base)
 	return simple_strtoull(cp, endp, base);
 }
 
-long trailing_strtoln(const char *str, const char *end)
+long trailing_strtoln_end(const char *str, const char *end, char const **endp)
 {
 	const char *p;
 
 	if (!end)
 		end = str + strlen(str);
-	if (isdigit(end[-1])) {
-		for (p = end - 1; p > str; p--) {
-			if (!isdigit(*p))
-				return dectoul(p + 1, NULL);
-		}
+	p = end - 1;
+	if (p > str && isdigit(*p)) {
+		do {
+			if (!isdigit(p[-1])) {
+				if (endp)
+					*endp = p;
+				return dectoul(p, NULL);
+			}
+		} while (--p > str);
 	}
+	if (endp)
+		*endp = end;
 
 	return -1;
+}
+
+long trailing_strtoln(const char *str, const char *end)
+{
+	return trailing_strtoln_end(str, end, NULL);
 }
 
 long trailing_strtol(const char *str)
@@ -210,4 +222,44 @@ void str_to_upper(const char *in, char *out, size_t len)
 		*out++ = toupper(*in++);
 	if (len)
 		*out = '\0';
+}
+
+const char **str_to_list(const char *instr)
+{
+	const char **ptr;
+	char *str, *p;
+	int count, i;
+
+	/* don't allocate if the string is empty */
+	str = *instr ? strdup(instr) : (char *)instr;
+	if (!str)
+		return NULL;
+
+	/* count the number of space-separated strings */
+	for (count = *str != '\0', p = str; *p; p++) {
+		if (*p == ' ') {
+			count++;
+			*p = '\0';
+		}
+	}
+
+	/* allocate the pointer array, allowing for a NULL terminator */
+	ptr = calloc(count + 1, sizeof(char *));
+	if (!ptr) {
+		if (*str)
+			free(str);
+		return NULL;
+	}
+
+	for (i = 0, p = str; i < count; p += strlen(p) + 1, i++)
+		ptr[i] = p;
+
+	return ptr;
+}
+
+void str_free_list(const char **ptr)
+{
+	if (ptr)
+		free((char *)ptr[0]);
+	free(ptr);
 }

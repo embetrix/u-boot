@@ -32,11 +32,11 @@ struct coldfire_spi_priv {
 
 DECLARE_GLOBAL_DATA_PTR;
 
-#ifndef CONFIG_SPI_IDLE_VAL
+#ifndef SPI_IDLE_VAL
 #if defined(CONFIG_SPI_MMC)
-#define CONFIG_SPI_IDLE_VAL	0xFFFF
+#define SPI_IDLE_VAL	0xFFFF
 #else
-#define CONFIG_SPI_IDLE_VAL	0x0
+#define SPI_IDLE_VAL	0x0
 #endif
 #endif
 
@@ -184,7 +184,7 @@ static int coldfire_spi_xfer(struct udevice *dev, unsigned int bitlen,
 			}
 
 			if (din) {
-				cfspi_tx(cfspi, ctrl, CONFIG_SPI_IDLE_VAL);
+				cfspi_tx(cfspi, ctrl, SPI_IDLE_VAL);
 				if (cfspi->charbit == 16)
 					*spi_rd16++ = cfspi_rx(cfspi);
 				else
@@ -208,7 +208,7 @@ static int coldfire_spi_xfer(struct udevice *dev, unsigned int bitlen,
 		}
 
 		if (din) {
-			cfspi_tx(cfspi, ctrl, CONFIG_SPI_IDLE_VAL);
+			cfspi_tx(cfspi, ctrl, SPI_IDLE_VAL);
 			if (cfspi->charbit == 16)
 				*spi_rd16 = cfspi_rx(cfspi);
 			else
@@ -216,7 +216,7 @@ static int coldfire_spi_xfer(struct udevice *dev, unsigned int bitlen,
 		}
 	} else {
 		/* dummy read */
-		cfspi_tx(cfspi, ctrl, CONFIG_SPI_IDLE_VAL);
+		cfspi_tx(cfspi, ctrl, SPI_IDLE_VAL);
 		cfspi_rx(cfspi);
 	}
 
@@ -384,7 +384,7 @@ static int coldfire_spi_probe(struct udevice *bus)
 	return 0;
 }
 
-#if CONFIG_IS_ENABLED(OF_CONTROL) && !CONFIG_IS_ENABLED(OF_PLATDATA)
+#if CONFIG_IS_ENABLED(OF_REAL)
 static int coldfire_dspi_of_to_plat(struct udevice *bus)
 {
 	fdt_addr_t addr;
@@ -450,7 +450,7 @@ static const struct dm_spi_ops coldfire_spi_ops = {
 U_BOOT_DRIVER(coldfire_spi) = {
 	.name = "spi_coldfire",
 	.id = UCLASS_SPI,
-#if CONFIG_IS_ENABLED(OF_CONTROL) && !CONFIG_IS_ENABLED(OF_PLATDATA)
+#if CONFIG_IS_ENABLED(OF_REAL)
 	.of_match = coldfire_spi_ids,
 	.of_to_plat = coldfire_dspi_of_to_plat,
 	.plat_auto	= sizeof(struct coldfire_spi_plat),

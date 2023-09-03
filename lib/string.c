@@ -206,16 +206,20 @@ size_t strlcat(char *dest, const char *src, size_t size)
  * @cs: One string
  * @ct: Another string
  */
-int strcmp(const char * cs,const char * ct)
+int strcmp(const char *cs, const char *ct)
 {
-	register signed char __res;
+	int ret;
 
 	while (1) {
-		if ((__res = *cs - *ct++) != 0 || !*cs++)
+		unsigned char a = *cs++;
+		unsigned char b = *ct++;
+
+		ret = a - b;
+		if (ret || !b)
 			break;
 	}
 
-	return __res;
+	return ret;
 }
 #endif
 
@@ -226,17 +230,20 @@ int strcmp(const char * cs,const char * ct)
  * @ct: Another string
  * @count: The maximum number of bytes to compare
  */
-int strncmp(const char * cs,const char * ct,size_t count)
+int strncmp(const char *cs, const char *ct, size_t count)
 {
-	register signed char __res = 0;
+	int ret = 0;
 
-	while (count) {
-		if ((__res = *cs - *ct++) != 0 || !*cs++)
+	while (count--) {
+		unsigned char a = *cs++;
+		unsigned char b = *ct++;
+
+		ret = a - b;
+		if (ret || !b)
 			break;
-		count--;
 	}
 
-	return __res;
+	return ret;
 }
 #endif
 
@@ -658,6 +665,19 @@ void * memscan(void * addr, int c, size_t size)
 	return (void *) p;
 }
 #endif
+
+char *memdup(const void *src, size_t len)
+{
+	char *p;
+
+	p = malloc(len);
+	if (!p)
+		return NULL;
+
+	memcpy(p, src, len);
+
+	return p;
+}
 
 #ifndef __HAVE_ARCH_STRSTR
 /**

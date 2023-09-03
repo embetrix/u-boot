@@ -14,6 +14,7 @@
 #include <asm/arch-rockchip/clock.h>
 #include <asm/arch-rockchip/hardware.h>
 #include <asm/io.h>
+#include <dm/device-internal.h>
 #include <dm/lists.h>
 #include <dt-bindings/clock/rk3568-cru.h>
 
@@ -424,6 +425,10 @@ static ulong rk3568_pmuclk_set_rate(struct clk *clk, ulong rate)
 	case PCLK_PMU:
 		ret = rk3568_pmu_set_pmuclk(priv, rate);
 		break;
+	case CLK_PCIEPHY0_REF:
+	case CLK_PCIEPHY1_REF:
+	case CLK_PCIEPHY2_REF:
+		return 0;
 	default:
 		return -ENOENT;
 	}
@@ -497,7 +502,7 @@ static int rk3568_pmuclk_bind(struct udevice *dev)
 	ret = offsetof(struct rk3568_pmucru, pmu_softrst_con[0]);
 	ret = rockchip_reset_bind(dev, ret, 1);
 	if (ret)
-		debug("Warning: pmucru software reset driver bind faile\n");
+		debug("Warning: pmucru software reset driver bind failed\n");
 #endif
 
 	return 0;
@@ -697,7 +702,10 @@ static ulong rk3568_cpll_div_set_rate(struct rk3568_clk_priv *priv,
 	}
 
 	div = DIV_ROUND_UP(priv->cpll_hz, rate);
-	assert(div - 1 <= 31);
+	if (clk_id == CPLL_25M)
+		assert(div - 1 <= 63);
+	else
+		assert(div - 1 <= 31);
 	rk_clrsetreg(&cru->clksel_con[con],
 		     mask, (div - 1) << shift);
 	return rk3568_cpll_div_get_rate(priv, clk_id);
@@ -1137,7 +1145,7 @@ static ulong rk3568_pwm_get_clk(struct rk3568_clk_priv *priv, ulong clk_id)
 
 	switch (clk_id) {
 	case CLK_PWM1:
-		sel = (con & CLK_PWM1_SEL_MASK) >> CLK_PWM3_SEL_SHIFT;
+		sel = (con & CLK_PWM1_SEL_MASK) >> CLK_PWM1_SEL_SHIFT;
 		break;
 	case CLK_PWM2:
 		sel = (con & CLK_PWM2_SEL_MASK) >> CLK_PWM2_SEL_SHIFT;
@@ -1441,6 +1449,8 @@ static ulong rk3568_sdmmc_set_clk(struct rk3568_clk_priv *priv,
 
 	switch (rate) {
 	case OSC_HZ:
+	case 26 * MHz:
+	case 25 * MHz:
 		src_clk = CLK_SDMMC_SEL_24M;
 		break;
 	case 400 * MHz:
@@ -1507,7 +1517,7 @@ static ulong rk3568_sfc_get_clk(struct rk3568_clk_priv *priv)
 	case SCLK_SFC_SEL_125M:
 		return 125 * MHz;
 	case SCLK_SFC_SEL_150M:
-		return 150 * KHz;
+		return 150 * MHz;
 	default:
 		return -ENOENT;
 	}
@@ -1534,7 +1544,7 @@ static ulong rk3568_sfc_set_clk(struct rk3568_clk_priv *priv, ulong rate)
 	case 125 * MHz:
 		src_clk = SCLK_SFC_SEL_125M;
 		break;
-	case 150 * KHz:
+	case 150 * MHz:
 		src_clk = SCLK_SFC_SEL_150M;
 		break;
 	default:
@@ -1630,6 +1640,8 @@ static ulong rk3568_emmc_set_clk(struct rk3568_clk_priv *priv, ulong rate)
 
 	switch (rate) {
 	case OSC_HZ:
+	case 26 * MHz:
+	case 25 * MHz:
 		src_clk = CCLK_EMMC_SEL_24M;
 		break;
 	case 52 * MHz:
@@ -2177,6 +2189,7 @@ static ulong rk3568_rkvdec_set_clk(struct rk3568_clk_priv *priv,
 
 	return rk3568_rkvdec_get_clk(priv, clk_id);
 }
+#endif
 
 static ulong rk3568_uart_get_rate(struct rk3568_clk_priv *priv, ulong clk_id)
 {
@@ -2312,7 +2325,6 @@ static ulong rk3568_uart_set_rate(struct rk3568_clk_priv *priv,
 
 	return rk3568_uart_get_rate(priv, clk_id);
 }
-#endif
 
 static ulong rk3568_clk_get_rate(struct clk *clk)
 {
@@ -2406,6 +2418,9 @@ static ulong rk3568_clk_get_rate(struct clk *clk)
 	case BCLK_EMMC:
 		rate = rk3568_emmc_get_bclk(priv);
 		break;
+	case TCLK_EMMC:
+		rate = OSC_HZ;
+		break;
 #ifndef CONFIG_SPL_BUILD
 	case ACLK_VOP:
 		rate = rk3568_aclk_vop_get_clk(priv);
@@ -2448,6 +2463,7 @@ static ulong rk3568_clk_get_rate(struct clk *clk)
 	case TCLK_WDT_NS:
 		rate = OSC_HZ;
 		break;
+#endif
 	case SCLK_UART1:
 	case SCLK_UART2:
 	case SCLK_UART3:
@@ -2459,7 +2475,6 @@ static ulong rk3568_clk_get_rate(struct clk *clk)
 	case SCLK_UART9:
 		rate = rk3568_uart_get_rate(priv, clk->id);
 		break;
-#endif
 	case ACLK_SECURE_FLASH:
 	case ACLK_CRYPTO_NS:
 	case HCLK_SECURE_FLASH:
@@ -2582,6 +2597,9 @@ static ulong rk3568_clk_set_rate(struct clk *clk, ulong rate)
 	case BCLK_EMMC:
 		ret = rk3568_emmc_set_bclk(priv, rate);
 		break;
+	case TCLK_EMMC:
+		ret = OSC_HZ;
+		break;
 #ifndef CONFIG_SPL_BUILD
 	case ACLK_VOP:
 		ret = rk3568_aclk_vop_set_clk(priv, rate);
@@ -2630,6 +2648,7 @@ static ulong rk3568_clk_set_rate(struct clk *clk, ulong rate)
 	case TCLK_WDT_NS:
 		ret = OSC_HZ;
 		break;
+#endif
 	case SCLK_UART1:
 	case SCLK_UART2:
 	case SCLK_UART3:
@@ -2641,7 +2660,6 @@ static ulong rk3568_clk_set_rate(struct clk *clk, ulong rate)
 	case SCLK_UART9:
 		ret = rk3568_uart_set_rate(priv, clk->id, rate);
 		break;
-#endif
 	case ACLK_SECURE_FLASH:
 	case ACLK_CRYPTO_NS:
 	case HCLK_SECURE_FLASH:
@@ -2824,6 +2842,12 @@ static int rk3568_clk_set_parent(struct clk *clk, struct clk *parent)
 	case ACLK_RKVDEC_PRE:
 	case CLK_RKVDEC_CORE:
 		return rk3568_rkvdec_set_parent(clk, parent);
+	case I2S1_MCLKOUT_TX:
+	case SCLK_GMAC0_RGMII_SPEED:
+	case SCLK_GMAC0_RMII_SPEED:
+	case SCLK_GMAC1_RGMII_SPEED:
+	case SCLK_GMAC1_RMII_SPEED:
+		break;
 	default:
 		return -ENOENT;
 	}
@@ -2927,13 +2951,14 @@ static int rk3568_clk_bind(struct udevice *dev)
 						    glb_srst_fst);
 		priv->glb_srst_snd_value = offsetof(struct rk3568_cru,
 						    glb_srsr_snd);
+		dev_set_priv(sys_child, priv);
 	}
 
 #if CONFIG_IS_ENABLED(RESET_ROCKCHIP)
 	ret = offsetof(struct rk3568_cru, softrst_con[0]);
 	ret = rockchip_reset_bind(dev, ret, 30);
 	if (ret)
-		debug("Warning: software reset driver bind faile\n");
+		debug("Warning: software reset driver bind failed\n");
 #endif
 
 	return 0;

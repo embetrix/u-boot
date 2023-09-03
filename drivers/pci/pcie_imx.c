@@ -14,6 +14,7 @@
 #include <log.h>
 #include <malloc.h>
 #include <pci.h>
+#include <power/regulator.h>
 #include <asm/arch/clock.h>
 #include <asm/arch/iomux.h>
 #include <asm/arch/crm_regs.h>
@@ -102,6 +103,7 @@ struct imx_pcie_priv {
 	void __iomem		*cfg_base;
 	struct gpio_desc	reset_gpio;
 	bool			reset_active_high;
+	struct udevice		*vpcie;
 };
 
 /*
@@ -300,9 +302,9 @@ static int imx_pcie_regions_setup(struct imx_pcie_priv *priv)
 	setbits_le32(priv->dbi_base + PCI_COMMAND,
 		     PCI_COMMAND_IO | PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
 
-	/* Set the CLASS_REV of RC CFG header to PCI_CLASS_BRIDGE_PCI */
+	/* Set the CLASS_REV of RC CFG header to PCI_CLASS_BRIDGE_PCI_NORMAL */
 	setbits_le32(priv->dbi_base + PCI_CLASS_REVISION,
-		     PCI_CLASS_BRIDGE_PCI << 16);
+		     PCI_CLASS_BRIDGE_PCI_NORMAL << 8);
 
 	/* Region #0 is used for Outbound CFG space access. */
 	writel(0, priv->dbi_base + PCIE_ATU_VIEWPORT);
@@ -530,20 +532,29 @@ static int imx6_pcie_init_phy(void)
 	return 0;
 }
 
-__weak int imx6_pcie_toggle_power(void)
+int imx6_pcie_toggle_power(struct udevice *vpcie)
 {
-#ifdef CONFIG_PCIE_IMX_POWER_GPIO
-	gpio_request(CONFIG_PCIE_IMX_POWER_GPIO, "pcie_power");
-	gpio_direction_output(CONFIG_PCIE_IMX_POWER_GPIO, 0);
+#ifdef CFG_PCIE_IMX_POWER_GPIO
+	gpio_request(CFG_PCIE_IMX_POWER_GPIO, "pcie_power");
+	gpio_direction_output(CFG_PCIE_IMX_POWER_GPIO, 0);
 	mdelay(20);
-	gpio_set_value(CONFIG_PCIE_IMX_POWER_GPIO, 1);
+	gpio_set_value(CFG_PCIE_IMX_POWER_GPIO, 1);
 	mdelay(20);
-	gpio_free(CONFIG_PCIE_IMX_POWER_GPIO);
+	gpio_free(CFG_PCIE_IMX_POWER_GPIO);
+#endif
+
+#if CONFIG_IS_ENABLED(DM_REGULATOR)
+	if (vpcie) {
+		regulator_set_enable(vpcie, false);
+		mdelay(20);
+		regulator_set_enable(vpcie, true);
+		mdelay(20);
+	}
 #endif
 	return 0;
 }
 
-__weak int imx6_pcie_toggle_reset(struct gpio_desc *gpio, bool active_high)
+int imx6_pcie_toggle_reset(struct gpio_desc *gpio, bool active_high)
 {
 	/*
 	 * See 'PCI EXPRESS BASE SPECIFICATION, REV 3.0, SECTION 6.6.1'
@@ -555,15 +566,9 @@ __weak int imx6_pcie_toggle_reset(struct gpio_desc *gpio, bool active_high)
 	 * do self-initialisation.
 	 *
 	 * In case your #PERST pin is connected to a plain GPIO pin of the
-	 * CPU, you can define CONFIG_PCIE_IMX_PERST_GPIO in your board's
+	 * CPU, you can define CFG_PCIE_IMX_PERST_GPIO in your board's
 	 * configuration file and the condition below will handle the rest
 	 * of the reset toggling.
-	 *
-	 * In case your #PERST toggling logic is more complex, for example
-	 * connected via CPLD or somesuch, you can override this function
-	 * in your board file and implement reset logic as needed. You must
-	 * not forget to wait at least 20 ms after de-asserting #PERST in
-	 * this case either though.
 	 *
 	 * In case your #PERST line of the PCIe EP device is not connected
 	 * at all, your design is broken and you should fix your design,
@@ -573,13 +578,13 @@ __weak int imx6_pcie_toggle_reset(struct gpio_desc *gpio, bool active_high)
 	 * Linux at all in the first place since it's in some non-reset
 	 * state due to being previously used in U-Boot.
 	 */
-#ifdef CONFIG_PCIE_IMX_PERST_GPIO
-	gpio_request(CONFIG_PCIE_IMX_PERST_GPIO, "pcie_reset");
-	gpio_direction_output(CONFIG_PCIE_IMX_PERST_GPIO, 0);
+#ifdef CFG_PCIE_IMX_PERST_GPIO
+	gpio_request(CFG_PCIE_IMX_PERST_GPIO, "pcie_reset");
+	gpio_direction_output(CFG_PCIE_IMX_PERST_GPIO, 0);
 	mdelay(20);
-	gpio_set_value(CONFIG_PCIE_IMX_PERST_GPIO, 1);
+	gpio_set_value(CFG_PCIE_IMX_PERST_GPIO, 1);
 	mdelay(20);
-	gpio_free(CONFIG_PCIE_IMX_PERST_GPIO);
+	gpio_free(CFG_PCIE_IMX_PERST_GPIO);
 #else
 	if (dm_gpio_is_valid(gpio)) {
 		/* Assert PERST# for 20ms then de-assert */
@@ -598,7 +603,7 @@ static int imx6_pcie_deassert_core_reset(struct imx_pcie_priv *priv)
 {
 	struct iomuxc *iomuxc_regs = (struct iomuxc *)IOMUXC_BASE_ADDR;
 
-	imx6_pcie_toggle_power();
+	imx6_pcie_toggle_power(priv->vpcie);
 
 	enable_pcie_clock();
 
@@ -717,6 +722,10 @@ static int imx_pcie_dm_probe(struct udevice *dev)
 {
 	struct imx_pcie_priv *priv = dev_get_priv(dev);
 
+#if CONFIG_IS_ENABLED(DM_REGULATOR)
+	device_get_supply_regulator(dev, "vpcie-supply", &priv->vpcie);
+#endif
+
 	/* if PERST# valid from dt then assert it */
 	gpio_request_by_name(dev, "reset-gpio", 0, &priv->reset_gpio,
 			     GPIOD_IS_OUT);
@@ -742,8 +751,8 @@ static int imx_pcie_of_to_plat(struct udevice *dev)
 {
 	struct imx_pcie_priv *priv = dev_get_priv(dev);
 
-	priv->dbi_base = (void __iomem *)devfdt_get_addr_index(dev, 0);
-	priv->cfg_base = (void __iomem *)devfdt_get_addr_index(dev, 1);
+	priv->dbi_base = devfdt_get_addr_index_ptr(dev, 0);
+	priv->cfg_base = devfdt_get_addr_index_ptr(dev, 1);
 	if (!priv->dbi_base || !priv->cfg_base)
 		return -EINVAL;
 

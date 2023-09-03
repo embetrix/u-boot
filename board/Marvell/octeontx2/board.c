@@ -105,7 +105,7 @@ int timer_init(void)
 int dram_init(void)
 {
 	gd->ram_size = smc_dram_size(0);
-	gd->ram_size -= CONFIG_SYS_SDRAM_BASE;
+	gd->ram_size -= CFG_SYS_SDRAM_BASE;
 
 	mem_map_fill();
 
@@ -226,12 +226,13 @@ static int do_go_uboot(struct cmd_tbl *cmdtp, int flag, int argc,
 	uboot_entry_t entry;
 	ulong addr;
 	void *fdt;
+	int err;
 
 	if (argc < 2)
 		return CMD_RET_USAGE;
 
 	addr = hextoul(argv[1], NULL);
-	fdt = board_fdt_blob_setup();
+	fdt = board_fdt_blob_setup(&err);
 	entry = (uboot_entry_t)addr;
 	flush_cache((ulong)addr, 1 << 20);	/* 1MiB should be enough */
 	dcache_disable();

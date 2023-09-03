@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2017-2019 NXP
+ * Copyright 2017-2019, 2021 NXP
  *
  * Peng Fan <peng.fan@nxp.com>
  */
 
 #include <common.h>
 #include <cpu_func.h>
+#include <event.h>
 #include <init.h>
 #include <log.h>
 #include <asm/arch/imx-regs.h>
@@ -20,6 +21,7 @@
 #include <asm/ptrace.h>
 #include <asm/armv8/mmu.h>
 #include <dm/uclass.h>
+#include <dm/device.h>
 #include <efi_loader.h>
 #include <env.h>
 #include <env_internal.h>
@@ -27,7 +29,6 @@
 #include <fdt_support.h>
 #include <fsl_wdog.h>
 #include <imx_sip.h>
-#include <linux/arm-smccc.h>
 #include <linux/bitops.h>
 
 DECLARE_GLOBAL_DATA_PTR;
@@ -66,8 +67,19 @@ void enable_tzc380(void)
 	/* Enable TZASC and lock setting */
 	setbits_le32(&gpr->gpr[10], GPR_TZASC_EN);
 	setbits_le32(&gpr->gpr[10], GPR_TZASC_EN_LOCK);
-	if (is_imx8mm() || is_imx8mn() || is_imx8mp())
-		setbits_le32(&gpr->gpr[10], BIT(1));
+
+	/*
+	 * According to TRM, TZASC_ID_SWAP_BYPASS should be set in
+	 * order to avoid AXI Bus errors when GPU is in use
+	 */
+	setbits_le32(&gpr->gpr[10], GPR_TZASC_ID_SWAP_BYPASS);
+
+	/*
+	 * imx8mn and imx8mp implements the lock bit for
+	 * TZASC_ID_SWAP_BYPASS, enable it to lock settings
+	 */
+	setbits_le32(&gpr->gpr[10], GPR_TZASC_ID_SWAP_BYPASS_LOCK);
+
 	/*
 	 * set Region 0 attribute to allow secure and non-secure
 	 * read/write permission. Found some masters like usb dwc3
@@ -87,6 +99,12 @@ void set_wdog_reset(struct wdog_regs *wdog)
 	 */
 	setbits_le16(&wdog->wcr, WDOG_WDT_MASK | WDOG_WDZST_MASK);
 }
+
+#ifdef CONFIG_ARMV8_PSCI
+#define PTE_MAP_NS	PTE_BLOCK_NS
+#else
+#define PTE_MAP_NS	0
+#endif
 
 static struct mm_region imx8m_mem_map[] = {
 	{
@@ -110,7 +128,7 @@ static struct mm_region imx8m_mem_map[] = {
 		.phys = 0x180000UL,
 		.size = 0x8000UL,
 		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
-			 PTE_BLOCK_OUTER_SHARE
+			 PTE_BLOCK_OUTER_SHARE | PTE_MAP_NS
 	}, {
 		/* TCM */
 		.virt = 0x7C0000UL,
@@ -118,14 +136,14 @@ static struct mm_region imx8m_mem_map[] = {
 		.size = 0x80000UL,
 		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
 			 PTE_BLOCK_NON_SHARE |
-			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
+			 PTE_BLOCK_PXN | PTE_BLOCK_UXN | PTE_MAP_NS
 	}, {
 		/* OCRAM */
 		.virt = 0x900000UL,
 		.phys = 0x900000UL,
 		.size = 0x200000UL,
 		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
-			 PTE_BLOCK_OUTER_SHARE
+			 PTE_BLOCK_OUTER_SHARE | PTE_MAP_NS
 	}, {
 		/* AIPS */
 		.virt = 0xB00000UL,
@@ -140,7 +158,7 @@ static struct mm_region imx8m_mem_map[] = {
 		.phys = 0x40000000UL,
 		.size = PHYS_SDRAM_SIZE,
 		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
-			 PTE_BLOCK_OUTER_SHARE
+			 PTE_BLOCK_OUTER_SHARE | PTE_MAP_NS
 #ifdef PHYS_SDRAM_2_SIZE
 	}, {
 		/* DRAM2 */
@@ -148,7 +166,7 @@ static struct mm_region imx8m_mem_map[] = {
 		.phys = 0x100000000UL,
 		.size = PHYS_SDRAM_2_SIZE,
 		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
-			 PTE_BLOCK_OUTER_SHARE
+			 PTE_BLOCK_OUTER_SHARE | PTE_MAP_NS
 #endif
 	}, {
 		/* empty entrie to split table entry 5 if needed when TEEs are used */
@@ -166,7 +184,7 @@ static unsigned int imx8m_find_dram_entry_in_mem_map(void)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(imx8m_mem_map); i++)
-		if (imx8m_mem_map[i].phys == CONFIG_SYS_SDRAM_BASE)
+		if (imx8m_mem_map[i].phys == CFG_SYS_SDRAM_BASE)
 			return i;
 
 	hang();	/* Entry not found, this must never happen. */
@@ -174,32 +192,29 @@ static unsigned int imx8m_find_dram_entry_in_mem_map(void)
 
 void enable_caches(void)
 {
-	/* If OPTEE runs, remove OPTEE memory from MMU table to avoid speculative prefetch */
-	if (rom_pointer[1]) {
-		/*
-		 * TEE are loaded, So the ddr bank structures
-		 * have been modified update mmu table accordingly
-		 */
-		int i = 0;
-		/*
-		 * please make sure that entry initial value matches
-		 * imx8m_mem_map for DRAM1
-		 */
-		int entry = imx8m_find_dram_entry_in_mem_map();
-		u64 attrs = imx8m_mem_map[entry].attrs;
+	/* If OPTEE runs, remove OPTEE memory from MMU table to avoid speculative prefetch
+	 * If OPTEE does not run, still update the MMU table according to dram banks structure
+	 * to set correct dram size from board_phys_sdram_size
+	 */
+	int i = 0;
+	/*
+	 * please make sure that entry initial value matches
+	 * imx8m_mem_map for DRAM1
+	 */
+	int entry = imx8m_find_dram_entry_in_mem_map();
+	u64 attrs = imx8m_mem_map[entry].attrs;
 
-		while (i < CONFIG_NR_DRAM_BANKS &&
-		       entry < ARRAY_SIZE(imx8m_mem_map)) {
-			if (gd->bd->bi_dram[i].start == 0)
-				break;
-			imx8m_mem_map[entry].phys = gd->bd->bi_dram[i].start;
-			imx8m_mem_map[entry].virt = gd->bd->bi_dram[i].start;
-			imx8m_mem_map[entry].size = gd->bd->bi_dram[i].size;
-			imx8m_mem_map[entry].attrs = attrs;
-			debug("Added memory mapping (%d): %llx %llx\n", entry,
-			      imx8m_mem_map[entry].phys, imx8m_mem_map[entry].size);
-			i++; entry++;
-		}
+	while (i < CONFIG_NR_DRAM_BANKS &&
+	       entry < ARRAY_SIZE(imx8m_mem_map)) {
+		if (gd->bd->bi_dram[i].start == 0)
+			break;
+		imx8m_mem_map[entry].phys = gd->bd->bi_dram[i].start;
+		imx8m_mem_map[entry].virt = gd->bd->bi_dram[i].start;
+		imx8m_mem_map[entry].size = gd->bd->bi_dram[i].size;
+		imx8m_mem_map[entry].attrs = attrs;
+		debug("Added memory mapping (%d): %llx %llx\n", entry,
+		      imx8m_mem_map[entry].phys, imx8m_mem_map[entry].size);
+		i++; entry++;
 	}
 
 	icache_enable();
@@ -212,12 +227,15 @@ __weak int board_phys_sdram_size(phys_size_t *size)
 		return -EINVAL;
 
 	*size = PHYS_SDRAM_SIZE;
+
+#ifdef PHYS_SDRAM_2_SIZE
+	*size += PHYS_SDRAM_2_SIZE;
+#endif
 	return 0;
 }
 
 int dram_init(void)
 {
-	unsigned int entry = imx8m_find_dram_entry_in_mem_map();
 	phys_size_t sdram_size;
 	int ret;
 
@@ -226,17 +244,10 @@ int dram_init(void)
 		return ret;
 
 	/* rom_pointer[1] contains the size of TEE occupies */
-	if (rom_pointer[1])
+	if (!IS_ENABLED(CONFIG_ARMV8_PSCI) && rom_pointer[1])
 		gd->ram_size = sdram_size - rom_pointer[1];
 	else
 		gd->ram_size = sdram_size;
-
-	/* also update the SDRAM size in the mem_map used externally */
-	imx8m_mem_map[entry].size = sdram_size;
-
-#ifdef PHYS_SDRAM_2_SIZE
-	gd->ram_size += PHYS_SDRAM_2_SIZE;
-#endif
 
 	return 0;
 }
@@ -246,18 +257,28 @@ int dram_init_banksize(void)
 	int bank = 0;
 	int ret;
 	phys_size_t sdram_size;
+	phys_size_t sdram_b1_size, sdram_b2_size;
 
 	ret = board_phys_sdram_size(&sdram_size);
 	if (ret)
 		return ret;
 
+	/* Bank 1 can't cross over 4GB space */
+	if (sdram_size > 0xc0000000) {
+		sdram_b1_size = 0xc0000000;
+		sdram_b2_size = sdram_size - 0xc0000000;
+	} else {
+		sdram_b1_size = sdram_size;
+		sdram_b2_size = 0;
+	}
+
 	gd->bd->bi_dram[bank].start = PHYS_SDRAM;
-	if (rom_pointer[1]) {
+	if (!IS_ENABLED(CONFIG_ARMV8_PSCI) && rom_pointer[1]) {
 		phys_addr_t optee_start = (phys_addr_t)rom_pointer[0];
 		phys_size_t optee_size = (size_t)rom_pointer[1];
 
 		gd->bd->bi_dram[bank].size = optee_start - gd->bd->bi_dram[bank].start;
-		if ((optee_start + optee_size) < (PHYS_SDRAM + sdram_size)) {
+		if ((optee_start + optee_size) < (PHYS_SDRAM + sdram_b1_size)) {
 			if (++bank >= CONFIG_NR_DRAM_BANKS) {
 				puts("CONFIG_NR_DRAM_BANKS is not enough\n");
 				return -1;
@@ -265,49 +286,75 @@ int dram_init_banksize(void)
 
 			gd->bd->bi_dram[bank].start = optee_start + optee_size;
 			gd->bd->bi_dram[bank].size = PHYS_SDRAM +
-				sdram_size - gd->bd->bi_dram[bank].start;
+				sdram_b1_size - gd->bd->bi_dram[bank].start;
 		}
 	} else {
-		gd->bd->bi_dram[bank].size = sdram_size;
+		gd->bd->bi_dram[bank].size = sdram_b1_size;
 	}
 
-#ifdef PHYS_SDRAM_2_SIZE
-	if (++bank >= CONFIG_NR_DRAM_BANKS) {
-		puts("CONFIG_NR_DRAM_BANKS is not enough for SDRAM_2\n");
-		return -1;
+	if (sdram_b2_size) {
+		if (++bank >= CONFIG_NR_DRAM_BANKS) {
+			puts("CONFIG_NR_DRAM_BANKS is not enough for SDRAM_2\n");
+			return -1;
+		}
+		gd->bd->bi_dram[bank].start = 0x100000000UL;
+		gd->bd->bi_dram[bank].size = sdram_b2_size;
 	}
-	gd->bd->bi_dram[bank].start = PHYS_SDRAM_2;
-	gd->bd->bi_dram[bank].size = PHYS_SDRAM_2_SIZE;
-#endif
 
 	return 0;
 }
 
 phys_size_t get_effective_memsize(void)
 {
-	/* return the first bank as effective memory */
-	if (rom_pointer[1])
-		return ((phys_addr_t)rom_pointer[0] - PHYS_SDRAM);
+	int ret;
+	phys_size_t sdram_size;
+	phys_size_t sdram_b1_size;
+	ret = board_phys_sdram_size(&sdram_size);
+	if (!ret) {
+		/* Bank 1 can't cross over 4GB space */
+		if (sdram_size > 0xc0000000) {
+			sdram_b1_size = 0xc0000000;
+		} else {
+			sdram_b1_size = sdram_size;
+		}
 
-#ifdef PHYS_SDRAM_2_SIZE
-	return gd->ram_size - PHYS_SDRAM_2_SIZE;
-#else
-	return gd->ram_size;
-#endif
+		if (!IS_ENABLED(CONFIG_ARMV8_PSCI) && rom_pointer[1]) {
+			/* We will relocate u-boot to Top of dram1. Tee position has two cases:
+			 * 1. At the top of dram1,  Then return the size removed optee size.
+			 * 2. In the middle of dram1, return the size of dram1.
+			 */
+			if ((rom_pointer[0] + rom_pointer[1]) == (PHYS_SDRAM + sdram_b1_size))
+				return ((phys_addr_t)rom_pointer[0] - PHYS_SDRAM);
+		}
+
+		return sdram_b1_size;
+	} else {
+		return PHYS_SDRAM_SIZE;
+	}
 }
 
-ulong board_get_usable_ram_top(ulong total_size)
+phys_addr_t board_get_usable_ram_top(phys_size_t total_size)
 {
+	ulong top_addr;
+
 	/*
 	 * Some IPs have their accessible address space restricted by
 	 * the interconnect. Let's make sure U-Boot only ever uses the
 	 * space below the 4G address boundary (which is 3GiB big),
 	 * even when the effective available memory is bigger.
 	 */
-	if (PHYS_SDRAM + gd->ram_size > 0x80000000)
-		return 0x80000000;
+	top_addr = clamp_val((u64)PHYS_SDRAM + gd->ram_size, 0, 0xffffffff);
 
-	return PHYS_SDRAM + gd->ram_size;
+	/*
+	 * rom_pointer[0] stores the TEE memory start address.
+	 * rom_pointer[1] stores the size TEE uses.
+	 * We need to reserve the memory region for TEE.
+	 */
+	if (!IS_ENABLED(CONFIG_ARMV8_PSCI) && rom_pointer[0] &&
+	    rom_pointer[1] && top_addr > rom_pointer[0])
+		top_addr = rom_pointer[0];
+
+	return top_addr;
 }
 
 static u32 get_cpu_variant_type(u32 type)
@@ -384,13 +431,27 @@ static u32 get_cpu_variant_type(u32 type)
 
 		/* npu disabled*/
 		if ((value & 0x8) == 0x8)
-			flag |= (1 << 1);
+			flag |= BIT(1);
 
 		/* isp disabled */
 		if ((value & 0x3) == 0x3)
-			flag |= (1 << 2);
+			flag |= BIT(2);
+
+		/* gpu disabled */
+		if ((value & 0xc0) == 0xc0)
+			flag |= BIT(3);
+
+		/* lvds disabled */
+		if ((value & 0x180000) == 0x180000)
+			flag |= BIT(4);
+
+		/* mipi dsi disabled */
+		if ((value & 0x60000) == 0x60000)
+			flag |= BIT(5);
 
 		switch (flag) {
+		case 0x3f:
+			return MXC_CPU_IMX8MPUL;
 		case 7:
 			return MXC_CPU_IMX8MPL;
 		case 2:
@@ -471,7 +532,7 @@ static void imx_set_wdog_powerdown(bool enable)
 	writew(enable, &wdog3->wmcr);
 }
 
-int arch_cpu_init_dm(void)
+static int imx8m_check_clock(void *ctx, struct event *event)
 {
 	struct udevice *dev;
 	int ret;
@@ -488,10 +549,49 @@ int arch_cpu_init_dm(void)
 
 	return 0;
 }
+EVENT_SPY(EVT_DM_POST_INIT_F, imx8m_check_clock);
+
+static void imx8m_setup_snvs(void)
+{
+	/* Enable SNVS clock */
+	clock_enable(CCGR_SNVS, 1);
+	/* Initialize glitch detect */
+	writel(SNVS_LPPGDR_INIT, SNVS_BASE_ADDR + SNVS_LPLVDR);
+	/* Clear interrupt status */
+	writel(0xffffffff, SNVS_BASE_ADDR + SNVS_LPSR);
+}
+
+static void imx8m_setup_csu_tzasc(void)
+{
+	const uintptr_t tzasc_base[4] = {
+		0x301f0000, 0x301f0000, 0x301f0000, 0x301f0000
+	};
+	int i, j;
+
+	if (!IS_ENABLED(CONFIG_ARMV8_PSCI))
+		return;
+
+	/* CSU */
+	for (i = 0; i < 64; i++)
+		writel(0x00ff00ff, (void *)CSU_BASE_ADDR + (4 * i));
+
+	/* TZASC */
+	for (j = 0; j < 4; j++) {
+		writel(0x77777777, (void *)(tzasc_base[j]));
+		writel(0x77777777, (void *)(tzasc_base[j]) + 0x4);
+		for (i = 0; i <= 0x10; i += 4)
+			writel(0, (void *)(tzasc_base[j]) + 0x40 + i);
+	}
+}
 
 int arch_cpu_init(void)
 {
 	struct ocotp_regs *ocotp = (struct ocotp_regs *)OCOTP_BASE_ADDR;
+
+#if !CONFIG_IS_ENABLED(SYS_ICACHE_OFF)
+	icache_enable();
+#endif
+
 	/*
 	 * ROM might disable clock for SCTR,
 	 * enable the clock before timer_init.
@@ -534,55 +634,15 @@ int arch_cpu_init(void)
 			writel(0x200, &ocotp->ctrl_clr);
 	}
 
+	imx8m_setup_snvs();
+
+	imx8m_setup_csu_tzasc();
+
 	return 0;
 }
 
 #if defined(CONFIG_IMX8MN) || defined(CONFIG_IMX8MP)
 struct rom_api *g_rom_api = (struct rom_api *)0x980;
-
-enum boot_device get_boot_device(void)
-{
-	volatile gd_t *pgd = gd;
-	int ret;
-	u32 boot;
-	u16 boot_type;
-	u8 boot_instance;
-	enum boot_device boot_dev = SD1_BOOT;
-
-	ret = g_rom_api->query_boot_infor(QUERY_BT_DEV, &boot,
-					  ((uintptr_t)&boot) ^ QUERY_BT_DEV);
-	set_gd(pgd);
-
-	if (ret != ROM_API_OKAY) {
-		puts("ROMAPI: failure at query_boot_info\n");
-		return -1;
-	}
-
-	boot_type = boot >> 16;
-	boot_instance = (boot >> 8) & 0xff;
-
-	switch (boot_type) {
-	case BT_DEV_TYPE_SD:
-		boot_dev = boot_instance + SD1_BOOT;
-		break;
-	case BT_DEV_TYPE_MMC:
-		boot_dev = boot_instance + MMC1_BOOT;
-		break;
-	case BT_DEV_TYPE_NAND:
-		boot_dev = NAND_BOOT;
-		break;
-	case BT_DEV_TYPE_FLEXSPINOR:
-		boot_dev = QSPI_BOOT;
-		break;
-	case BT_DEV_TYPE_USB:
-		boot_dev = USB_BOOT;
-		break;
-	default:
-		break;
-	}
-
-	return boot_dev;
-}
 #endif
 
 #if defined(CONFIG_IMX8M)
@@ -611,6 +671,7 @@ int spl_mmc_emmc_boot_partition(struct mmc *mmc)
 		/* Log entries with 1 parameter, skip 1 */
 		case 0x80: /* Start to perform the device initialization */
 		case 0x81: /* The boot device initialization completes */
+		case 0x82: /* Starts to execute boot device driver pre-config */
 		case 0x8f: /* The boot device initialization fails */
 		case 0x90: /* Start to read data from boot device */
 		case 0x91: /* Reading data from boot device completes */
@@ -676,7 +737,7 @@ static int disable_fdt_nodes(void *blob, const char *const nodes_path[], int siz
 		if (nodeoff < 0)
 			continue; /* Not found, skip it */
 
-		printf("Found %s node\n", nodes_path[i]);
+		debug("Found %s node\n", nodes_path[i]);
 
 add_status:
 		rc = fdt_setprop(blob, nodeoff, "status", status, strlen(status) + 1);
@@ -854,6 +915,8 @@ static int low_drive_gpu_freq(void *blob)
 
 	if (cnt != 7)
 		printf("Warning: %s, assigned-clock-rates count %d\n", nodes_path_8mn[0], cnt);
+	if (cnt < 2)
+		return -1;
 
 	assignedclks[cnt - 1] = 200000000;
 	assignedclks[cnt - 2] = 200000000;
@@ -868,6 +931,90 @@ static int low_drive_gpu_freq(void *blob)
 }
 #endif
 
+static bool check_remote_endpoint(void *blob, const char *ep1, const char *ep2)
+{
+	int lookup_node;
+	int nodeoff;
+
+	nodeoff = fdt_path_offset(blob, ep1);
+	if (nodeoff) {
+		lookup_node = fdtdec_lookup_phandle(blob, nodeoff, "remote-endpoint");
+		nodeoff = fdt_path_offset(blob, ep2);
+
+		if (nodeoff > 0 && nodeoff == lookup_node)
+			return true;
+	}
+
+	return false;
+}
+
+int disable_dsi_lcdif_nodes(void *blob)
+{
+	int ret;
+
+	static const char * const dsi_path_8mp[] = {
+		"/soc@0/bus@32c00000/mipi_dsi@32e60000"
+	};
+
+	static const char * const lcdif_path_8mp[] = {
+		"/soc@0/bus@32c00000/lcd-controller@32e80000"
+	};
+
+	static const char * const lcdif_ep_path_8mp[] = {
+		"/soc@0/bus@32c00000/lcd-controller@32e80000/port@0/endpoint"
+	};
+	static const char * const dsi_ep_path_8mp[] = {
+		"/soc@0/bus@32c00000/mipi_dsi@32e60000/port@0/endpoint"
+	};
+
+	ret = disable_fdt_nodes(blob, dsi_path_8mp, ARRAY_SIZE(dsi_path_8mp));
+	if (ret)
+		return ret;
+
+	if (check_remote_endpoint(blob, dsi_ep_path_8mp[0], lcdif_ep_path_8mp[0])) {
+		/* Disable lcdif node */
+		return disable_fdt_nodes(blob, lcdif_path_8mp, ARRAY_SIZE(lcdif_path_8mp));
+	}
+
+	return 0;
+}
+
+int disable_lvds_lcdif_nodes(void *blob)
+{
+	int ret, i;
+
+	static const char * const ldb_path_8mp[] = {
+		"/soc@0/bus@32c00000/ldb@32ec005c",
+		"/soc@0/bus@32c00000/phy@32ec0128"
+	};
+
+	static const char * const lcdif_path_8mp[] = {
+		"/soc@0/bus@32c00000/lcd-controller@32e90000"
+	};
+
+	static const char * const lcdif_ep_path_8mp[] = {
+		"/soc@0/bus@32c00000/lcd-controller@32e90000/port@0/endpoint@0",
+		"/soc@0/bus@32c00000/lcd-controller@32e90000/port@0/endpoint@1"
+	};
+	static const char * const ldb_ep_path_8mp[] = {
+		"/soc@0/bus@32c00000/ldb@32ec005c/lvds-channel@0/port@0/endpoint",
+		"/soc@0/bus@32c00000/ldb@32ec005c/lvds-channel@1/port@0/endpoint"
+	};
+
+	ret = disable_fdt_nodes(blob, ldb_path_8mp, ARRAY_SIZE(ldb_path_8mp));
+	if (ret)
+		return ret;
+
+	for (i = 0; i < ARRAY_SIZE(ldb_ep_path_8mp); i++) {
+		if (check_remote_endpoint(blob, ldb_ep_path_8mp[i], lcdif_ep_path_8mp[i])) {
+			/* Disable lcdif node */
+			return disable_fdt_nodes(blob, lcdif_path_8mp, ARRAY_SIZE(lcdif_path_8mp));
+		}
+	}
+
+	return 0;
+}
+
 int disable_gpu_nodes(void *blob)
 {
 	static const char * const nodes_path_8mn[] = {
@@ -875,7 +1022,15 @@ int disable_gpu_nodes(void *blob)
 		"/soc@/gpu@38000000"
 	};
 
-	return disable_fdt_nodes(blob, nodes_path_8mn, ARRAY_SIZE(nodes_path_8mn));
+	static const char * const nodes_path_8mp[] = {
+		"/gpu3d@38000000",
+		"/gpu2d@38008000"
+	};
+
+	if (is_imx8mp())
+		return disable_fdt_nodes(blob, nodes_path_8mp, ARRAY_SIZE(nodes_path_8mp));
+	else
+		return disable_fdt_nodes(blob, nodes_path_8mn, ARRAY_SIZE(nodes_path_8mn));
 }
 
 int disable_npu_nodes(void *blob)
@@ -1017,6 +1172,79 @@ static int disable_cpu_nodes(void *blob, u32 disabled_cores)
 	return 0;
 }
 
+static int cleanup_nodes_for_efi(void *blob)
+{
+	static const char * const path[][2] = {
+		{ "/soc@0/bus@32c00000/usb@32e40000", "extcon" },
+		{ "/soc@0/bus@32c00000/usb@32e50000", "extcon" },
+		{ "/soc@0/bus@30800000/ethernet@30be0000", "phy-reset-gpios" },
+		{ "/soc@0/bus@30800000/ethernet@30bf0000", "phy-reset-gpios" }
+	};
+	int nodeoff, i, rc;
+
+	for (i = 0; i < ARRAY_SIZE(path); i++) {
+		nodeoff = fdt_path_offset(blob, path[i][0]);
+		if (nodeoff < 0)
+			continue; /* Not found, skip it */
+		debug("Found %s node\n", path[i][0]);
+
+		rc = fdt_delprop(blob, nodeoff, path[i][1]);
+		if (rc == -FDT_ERR_NOTFOUND)
+			continue;
+		if (rc) {
+			printf("Unable to update property %s:%s, err=%s\n",
+			       path[i][0], path[i][1], fdt_strerror(rc));
+			return rc;
+		}
+
+		printf("Remove %s:%s\n", path[i][0], path[i][1]);
+	}
+
+	return 0;
+}
+
+static int fixup_thermal_trips(void *blob, const char *name)
+{
+	int minc, maxc;
+	int node, trip;
+
+	node = fdt_path_offset(blob, "/thermal-zones");
+	if (node < 0)
+		return node;
+
+	node = fdt_subnode_offset(blob, node, name);
+	if (node < 0)
+		return node;
+
+	node = fdt_subnode_offset(blob, node, "trips");
+	if (node < 0)
+		return node;
+
+	get_cpu_temp_grade(&minc, &maxc);
+
+	fdt_for_each_subnode(trip, blob, node) {
+		const char *type;
+		int temp, ret;
+
+		type = fdt_getprop(blob, trip, "type", NULL);
+		if (!type)
+			continue;
+
+		temp = 0;
+		if (!strcmp(type, "critical"))
+			temp = 1000 * maxc;
+		else if (!strcmp(type, "passive"))
+			temp = 1000 * (maxc - 10);
+		if (temp) {
+			ret = fdt_setprop_u32(blob, trip, "temperature", temp);
+			if (ret)
+				return ret;
+		}
+	}
+
+	return 0;
+}
+
 int ft_system_setup(void *blob, struct bd_info *bd)
 {
 #ifdef CONFIG_IMX8MQ
@@ -1038,7 +1266,7 @@ int ft_system_setup(void *blob, struct bd_info *bd)
 		if (nodeoff >= 0) {
 			const char *speed = "high-speed";
 
-			printf("Found %s node\n", usb_dwc3_path[v]);
+			debug("Found %s node\n", usb_dwc3_path[v]);
 
 usb_modify_speed:
 
@@ -1131,21 +1359,40 @@ usb_modify_speed:
 		disable_cpu_nodes(blob, 3);
 
 #elif defined(CONFIG_IMX8MP)
-	if (is_imx8mpl())
+	if (is_imx8mpul()) {
+		/* Disable GPU */
+		disable_gpu_nodes(blob);
+
+		/* Disable DSI */
+		disable_dsi_lcdif_nodes(blob);
+
+		/* Disable LVDS */
+		disable_lvds_lcdif_nodes(blob);
+	}
+
+	if (is_imx8mpul() || is_imx8mpl())
 		disable_vpu_nodes(blob);
 
-	if (is_imx8mpl() || is_imx8mp6())
+	if (is_imx8mpul() || is_imx8mpl() || is_imx8mp6())
 		disable_npu_nodes(blob);
 
-	if (is_imx8mpl())
+	if (is_imx8mpul() || is_imx8mpl())
 		disable_isp_nodes(blob);
 
-	if (is_imx8mpl() || is_imx8mp6())
+	if (is_imx8mpul() || is_imx8mpl() || is_imx8mp6())
 		disable_dsp_nodes(blob);
 
 	if (is_imx8mpd())
 		disable_cpu_nodes(blob, 2);
 #endif
+
+	cleanup_nodes_for_efi(blob);
+
+	if (fixup_thermal_trips(blob, "cpu-thermal"))
+		printf("Failed to update cpu-thermal trip(s)");
+	if (IS_ENABLED(CONFIG_IMX8MP) &&
+	    fixup_thermal_trips(blob, "soc-thermal"))
+		printf("Failed to update soc-thermal trip(s)");
 
 	return 0;
 }
@@ -1168,109 +1415,26 @@ void reset_cpu(void)
 #endif
 
 #if defined(CONFIG_ARCH_MISC_INIT)
-static void acquire_buildinfo(void)
-{
-	u64 atf_commit = 0;
-	struct arm_smccc_res res;
-
-	/* Get ARM Trusted Firmware commit id */
-	arm_smccc_smc(IMX_SIP_BUILDINFO, IMX_SIP_BUILDINFO_GET_COMMITHASH,
-		      0, 0, 0, 0, 0, 0, &res);
-	atf_commit = res.a0;
-	if (atf_commit == 0xffffffff) {
-		debug("ATF does not support build info\n");
-		atf_commit = 0x30; /* Display 0, 0 ascii is 0x30 */
-	}
-
-	printf("\n BuildInfo:\n  - ATF %s\n\n", (char *)&atf_commit);
-}
-
 int arch_misc_init(void)
 {
-	acquire_buildinfo();
+	if (IS_ENABLED(CONFIG_FSL_CAAM)) {
+		struct udevice *dev;
+		int ret;
+
+		ret = uclass_get_device_by_driver(UCLASS_MISC, DM_DRIVER_GET(caam_jr), &dev);
+		if (ret)
+			printf("Failed to initialize caam_jr: %d\n", ret);
+	}
 
 	return 0;
 }
 #endif
 
-void imx_tmu_arch_init(void *reg_base)
-{
-	if (is_imx8mm() || is_imx8mn()) {
-		/* Load TCALIV and TASR from fuses */
-		struct ocotp_regs *ocotp =
-			(struct ocotp_regs *)OCOTP_BASE_ADDR;
-		struct fuse_bank *bank = &ocotp->bank[3];
-		struct fuse_bank3_regs *fuse =
-			(struct fuse_bank3_regs *)bank->fuse_regs;
-
-		u32 tca_rt, tca_hr, tca_en;
-		u32 buf_vref, buf_slope;
-
-		tca_rt = fuse->ana0 & 0xFF;
-		tca_hr = (fuse->ana0 & 0xFF00) >> 8;
-		tca_en = (fuse->ana0 & 0x2000000) >> 25;
-
-		buf_vref = (fuse->ana0 & 0x1F00000) >> 20;
-		buf_slope = (fuse->ana0 & 0xF0000) >> 16;
-
-		writel(buf_vref | (buf_slope << 16), (ulong)reg_base + 0x28);
-		writel((tca_en << 31) | (tca_hr << 16) | tca_rt,
-		       (ulong)reg_base + 0x30);
-	}
-#ifdef CONFIG_IMX8MP
-	/* Load TCALIV0/1/m40 and TRIM from fuses */
-	struct ocotp_regs *ocotp = (struct ocotp_regs *)OCOTP_BASE_ADDR;
-	struct fuse_bank *bank = &ocotp->bank[38];
-	struct fuse_bank38_regs *fuse =
-		(struct fuse_bank38_regs *)bank->fuse_regs;
-	struct fuse_bank *bank2 = &ocotp->bank[39];
-	struct fuse_bank39_regs *fuse2 =
-		(struct fuse_bank39_regs *)bank2->fuse_regs;
-	u32 buf_vref, buf_slope, bjt_cur, vlsb, bgr;
-	u32 reg;
-	u32 tca40[2], tca25[2], tca105[2];
-
-	/* For blank sample */
-	if (!fuse->ana_trim2 && !fuse->ana_trim3 &&
-	    !fuse->ana_trim4 && !fuse2->ana_trim5) {
-		/* Use a default 25C binary codes */
-		tca25[0] = 1596;
-		tca25[1] = 1596;
-		writel(tca25[0], (ulong)reg_base + 0x30);
-		writel(tca25[1], (ulong)reg_base + 0x34);
-		return;
-	}
-
-	buf_vref = (fuse->ana_trim2 & 0xc0) >> 6;
-	buf_slope = (fuse->ana_trim2 & 0xF00) >> 8;
-	bjt_cur = (fuse->ana_trim2 & 0xF000) >> 12;
-	bgr = (fuse->ana_trim2 & 0xF0000) >> 16;
-	vlsb = (fuse->ana_trim2 & 0xF00000) >> 20;
-	writel(buf_vref | (buf_slope << 16), (ulong)reg_base + 0x28);
-
-	reg = (bgr << 28) | (bjt_cur << 20) | (vlsb << 12) | (1 << 7);
-	writel(reg, (ulong)reg_base + 0x3c);
-
-	tca40[0] = (fuse->ana_trim3 & 0xFFF0000) >> 16;
-	tca25[0] = (fuse->ana_trim3 & 0xF0000000) >> 28;
-	tca25[0] |= ((fuse->ana_trim4 & 0xFF) << 4);
-	tca105[0] = (fuse->ana_trim4 & 0xFFF00) >> 8;
-	tca40[1] = (fuse->ana_trim4 & 0xFFF00000) >> 20;
-	tca25[1] = fuse2->ana_trim5 & 0xFFF;
-	tca105[1] = (fuse2->ana_trim5 & 0xFFF000) >> 12;
-
-	/* use 25c for 1p calibration */
-	writel(tca25[0] | (tca105[0] << 16), (ulong)reg_base + 0x30);
-	writel(tca25[1] | (tca105[1] << 16), (ulong)reg_base + 0x34);
-	writel(tca40[0] | (tca40[1] << 16), (ulong)reg_base + 0x38);
-#endif
-}
-
 #if defined(CONFIG_SPL_BUILD)
 #if defined(CONFIG_IMX8MQ) || defined(CONFIG_IMX8MM) || defined(CONFIG_IMX8MN)
 bool serror_need_skip = true;
 
-void do_error(struct pt_regs *pt_regs, unsigned int esr)
+void do_error(struct pt_regs *pt_regs)
 {
 	/*
 	 * If stack is still in ROM reserved OCRAM not switch to SPL,
@@ -1295,7 +1459,7 @@ void do_error(struct pt_regs *pt_regs, unsigned int esr)
 	}
 
 	efi_restore_gd();
-	printf("\"Error\" handler, esr 0x%08x\n", esr);
+	printf("\"Error\" handler, esr 0x%08lx\n", pt_regs->esr);
 	show_regs(pt_regs);
 	panic("Resetting CPU ...\n");
 }
@@ -1303,58 +1467,80 @@ void do_error(struct pt_regs *pt_regs, unsigned int esr)
 #endif
 
 #if defined(CONFIG_IMX8MN) || defined(CONFIG_IMX8MP)
-enum env_location env_get_location(enum env_operation op, int prio)
+enum env_location arch_env_get_location(enum env_operation op, int prio)
 {
 	enum boot_device dev = get_boot_device();
-	enum env_location env_loc = ENVL_UNKNOWN;
 
 	if (prio)
-		return env_loc;
+		return ENVL_UNKNOWN;
 
 	switch (dev) {
-#ifdef CONFIG_ENV_IS_IN_SPI_FLASH
+	case USB_BOOT:
+		if (IS_ENABLED(CONFIG_ENV_IS_IN_SPI_FLASH))
+			return ENVL_SPI_FLASH;
+		if (IS_ENABLED(CONFIG_ENV_IS_IN_NAND))
+			return ENVL_NAND;
+		if (IS_ENABLED(CONFIG_ENV_IS_IN_MMC))
+			return ENVL_MMC;
+		if (IS_ENABLED(CONFIG_ENV_IS_NOWHERE))
+			return ENVL_NOWHERE;
+		return ENVL_UNKNOWN;
 	case QSPI_BOOT:
-		env_loc = ENVL_SPI_FLASH;
-		break;
-#endif
-#ifdef CONFIG_ENV_IS_IN_NAND
+	case SPI_NOR_BOOT:
+		if (IS_ENABLED(CONFIG_ENV_IS_IN_SPI_FLASH))
+			return ENVL_SPI_FLASH;
+		return ENVL_NOWHERE;
 	case NAND_BOOT:
-		env_loc = ENVL_NAND;
-		break;
-#endif
-#ifdef CONFIG_ENV_IS_IN_MMC
+		if (IS_ENABLED(CONFIG_ENV_IS_IN_NAND))
+			return ENVL_NAND;
+		return ENVL_NOWHERE;
 	case SD1_BOOT:
 	case SD2_BOOT:
 	case SD3_BOOT:
 	case MMC1_BOOT:
 	case MMC2_BOOT:
 	case MMC3_BOOT:
-		env_loc =  ENVL_MMC;
-		break;
-#endif
+		if (IS_ENABLED(CONFIG_ENV_IS_IN_MMC))
+			return ENVL_MMC;
+		else if (IS_ENABLED(CONFIG_ENV_IS_IN_EXT4))
+			return ENVL_EXT4;
+		else if (IS_ENABLED(CONFIG_ENV_IS_IN_FAT))
+			return ENVL_FAT;
+		return ENVL_NOWHERE;
 	default:
-#if defined(CONFIG_ENV_IS_NOWHERE)
-		env_loc = ENVL_NOWHERE;
-#endif
-		break;
+		return ENVL_NOWHERE;
 	}
-
-	return env_loc;
 }
 
-#ifndef ENV_IS_EMBEDDED
-long long env_get_offset(long long defautl_offset)
+#endif
+
+#ifdef CONFIG_IMX_BOOTAUX
+const struct rproc_att hostmap[] = {
+	/* aux core , host core,  size */
+	{ 0x00000000, 0x007e0000, 0x00020000 },
+	/* OCRAM_S */
+	{ 0x00180000, 0x00180000, 0x00008000 },
+	/* OCRAM */
+	{ 0x00900000, 0x00900000, 0x00020000 },
+	/* OCRAM */
+	{ 0x00920000, 0x00920000, 0x00020000 },
+	/* QSPI Code - alias */
+	{ 0x08000000, 0x08000000, 0x08000000 },
+	/* DDR (Code) - alias */
+	{ 0x10000000, 0x80000000, 0x0FFE0000 },
+	/* TCML */
+	{ 0x1FFE0000, 0x007E0000, 0x00040000 },
+	/* OCRAM_S */
+	{ 0x20180000, 0x00180000, 0x00008000 },
+	/* OCRAM */
+	{ 0x20200000, 0x00900000, 0x00040000 },
+	/* DDR (Data) */
+	{ 0x40000000, 0x40000000, 0x80000000 },
+	{ /* sentinel */ }
+};
+
+const struct rproc_att *imx_bootaux_get_hostmap(void)
 {
-	enum boot_device dev = get_boot_device();
-
-	switch (dev) {
-	case NAND_BOOT:
-		return (60 << 20);  /* 60MB offset for NAND */
-	default:
-		break;
-	}
-
-	return defautl_offset;
+	return hostmap;
 }
-#endif
 #endif

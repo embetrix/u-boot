@@ -14,7 +14,7 @@
 #include "musb_hcd.h"
 
 /* MSC control transfers */
-#define USB_MSC_BBB_RESET 	0xFF
+#define USB_MSC_BBB_RESET	0xFF
 #define USB_MSC_BBB_GET_MAX_LUN	0xFE
 
 /* Endpoint configuration information */
@@ -118,7 +118,7 @@ static int wait_until_ep0_ready(struct usb_device *dev, u32 bit_mask)
 {
 	u16 csr;
 	int result = 1;
-	int timeout = CONFIG_USB_MUSB_TIMEOUT;
+	int timeout = MUSB_TIMEOUT;
 
 	while (result > 0) {
 		csr = readw(&musbr->txcsr);
@@ -180,7 +180,7 @@ static int wait_until_ep0_ready(struct usb_device *dev, u32 bit_mask)
 static int wait_until_txep_ready(struct usb_device *dev, u8 ep)
 {
 	u16 csr;
-	int timeout = CONFIG_USB_MUSB_TIMEOUT;
+	int timeout = MUSB_TIMEOUT;
 
 	do {
 		if (check_stall(ep, 1)) {
@@ -212,7 +212,7 @@ static int wait_until_txep_ready(struct usb_device *dev, u8 ep)
 static int wait_until_rxep_ready(struct usb_device *dev, u8 ep)
 {
 	u16 csr;
-	int timeout = CONFIG_USB_MUSB_TIMEOUT;
+	int timeout = MUSB_TIMEOUT;
 
 	do {
 		if (check_stall(ep, 0)) {
@@ -327,7 +327,7 @@ static int ctrlreq_out_data_phase(struct usb_device *dev, u32 len, void *buffer)
 
 		/* Set TXPKTRDY bit */
 		csr = readw(&musbr->txcsr);
-			
+
 		csr |= MUSB_CSR0_TXPKTRDY;
 		csr |= MUSB_CSR0_H_DIS_PING;
 		writew(csr, &musbr->txcsr);

@@ -5,6 +5,7 @@
  */
 
 #include <common.h>
+#include <clock_legacy.h>
 #include <clk.h>
 #include <dm.h>
 #include <fsl_lpuart.h>
@@ -102,13 +103,9 @@ static void lpuart_write32(u32 flags, u32 *addr, u32 val)
 }
 
 
-#ifndef CONFIG_SYS_CLK_FREQ
-#define CONFIG_SYS_CLK_FREQ	0
-#endif
-
 u32 __weak get_lpuart_clk(void)
 {
-	return CONFIG_SYS_CLK_FREQ;
+	return get_board_sys_clk();
 }
 
 #if CONFIG_IS_ENABLED(CLK)
@@ -171,23 +168,24 @@ static void _lpuart_serial_setbrg(struct udevice *dev,
 static int _lpuart_serial_getc(struct lpuart_serial_plat *plat)
 {
 	struct lpuart_fsl *base = plat->reg;
-	while (!(__raw_readb(&base->us1) & (US1_RDRF | US1_OR)))
-		WATCHDOG_RESET();
+	if (!(__raw_readb(&base->us1) & (US1_RDRF | US1_OR)))
+		return -EAGAIN;
 
 	barrier();
 
 	return __raw_readb(&base->ud);
 }
 
-static void _lpuart_serial_putc(struct lpuart_serial_plat *plat,
+static int _lpuart_serial_putc(struct lpuart_serial_plat *plat,
 				const char c)
 {
 	struct lpuart_fsl *base = plat->reg;
 
-	while (!(__raw_readb(&base->us1) & US1_TDRE))
-		WATCHDOG_RESET();
+	if (!(__raw_readb(&base->us1) & US1_TDRE))
+		return -EAGAIN;
 
 	__raw_writeb(c, &base->ud);
+	return 0;
 }
 
 /* Test whether a character is in the RX buffer */
@@ -331,10 +329,9 @@ static int _lpuart32_serial_getc(struct lpuart_serial_plat *plat)
 	u32 stat, val;
 
 	lpuart_read32(plat->flags, &base->stat, &stat);
-	while ((stat & STAT_RDRF) == 0) {
+	if ((stat & STAT_RDRF) == 0) {
 		lpuart_write32(plat->flags, &base->stat, STAT_FLAGS);
-		WATCHDOG_RESET();
-		lpuart_read32(plat->flags, &base->stat, &stat);
+		return -EAGAIN;
 	}
 
 	lpuart_read32(plat->flags, &base->data, &val);
@@ -346,25 +343,18 @@ static int _lpuart32_serial_getc(struct lpuart_serial_plat *plat)
 	return val & 0x3ff;
 }
 
-static void _lpuart32_serial_putc(struct lpuart_serial_plat *plat,
+static int _lpuart32_serial_putc(struct lpuart_serial_plat *plat,
 				  const char c)
 {
 	struct lpuart_fsl_reg32 *base = plat->reg;
 	u32 stat;
 
-	if (c == '\n')
-		serial_putc('\r');
-
-	while (true) {
-		lpuart_read32(plat->flags, &base->stat, &stat);
-
-		if ((stat & STAT_TDRE))
-			break;
-
-		WATCHDOG_RESET();
-	}
+	lpuart_read32(plat->flags, &base->stat, &stat);
+	if (!(stat & STAT_TDRE))
+		return -EAGAIN;
 
 	lpuart_write32(plat->flags, &base->data, c);
+	return 0;
 }
 
 /* Test whether a character is in the RX buffer */
@@ -459,11 +449,9 @@ static int lpuart_serial_putc(struct udevice *dev, const char c)
 	struct lpuart_serial_plat *plat = dev_get_plat(dev);
 
 	if (is_lpuart32(dev))
-		_lpuart32_serial_putc(plat, c);
-	else
-		_lpuart_serial_putc(plat, c);
+		return _lpuart32_serial_putc(plat, c);
 
-	return 0;
+	return _lpuart_serial_putc(plat, c);
 }
 
 static int lpuart_serial_pending(struct udevice *dev, bool input)
@@ -553,6 +541,8 @@ static const struct dm_serial_ops lpuart_serial_ops = {
 static const struct udevice_id lpuart_serial_ids[] = {
 	{ .compatible = "fsl,ls1021a-lpuart", .data =
 		LPUART_FLAG_REGMAP_32BIT_REG | LPUART_FLAG_REGMAP_ENDIAN_BIG },
+	{ .compatible = "fsl,ls1028a-lpuart",
+		.data = LPUART_FLAG_REGMAP_32BIT_REG },
 	{ .compatible = "fsl,imx7ulp-lpuart",
 		.data = LPUART_FLAG_REGMAP_32BIT_REG },
 	{ .compatible = "fsl,vf610-lpuart"},

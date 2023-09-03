@@ -12,14 +12,12 @@ if CRYPT_PW
 config CRYPT_PW_SHA256
 	bool "Provide sha256crypt"
 	select SHA256
-	select SHA256_ALGO
 	help
 	  Enables support for the sha256crypt password-hashing algorithm.
 	  The prefix is "$5$".
 
 config CRYPT_PW_SHA512
 	bool "Provide sha512crypt"
-	select SHA512
 	select SHA512
 	help
 	  Enables support for the sha512crypt password-hashing algorithm.

@@ -7,7 +7,7 @@
 #include <dm.h>
 #include <log.h>
 #include <pci.h>
-#include <vbe.h>
+#include <vesa.h>
 #include <video.h>
 #include <asm/mtrr.h>
 
@@ -17,14 +17,13 @@ static int vesa_video_probe(struct udevice *dev)
 	ulong fbbase;
 	int ret;
 
-	ret = vbe_setup_video(dev, NULL);
+	ret = vesa_setup_video(dev, NULL);
 	if (ret)
 		return log_ret(ret);
 
 	/* Use write-combining for the graphics memory, 256MB */
 	fbbase = IS_ENABLED(CONFIG_VIDEO_COPY) ? plat->copy_base : plat->base;
-	mtrr_add_request(MTRR_TYPE_WRCOMB, fbbase, 256 << 20);
-	mtrr_commit(true);
+	mtrr_set_next_var(MTRR_TYPE_WRCOMB, fbbase, 256 << 20);
 
 	return 0;
 }

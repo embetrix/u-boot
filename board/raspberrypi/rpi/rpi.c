@@ -11,7 +11,6 @@
 #include <fdt_support.h>
 #include <fdt_simplefb.h>
 #include <init.h>
-#include <lcd.h>
 #include <memalign.h>
 #include <mmc.h>
 #include <asm/gpio.h>
@@ -72,7 +71,7 @@ struct msg_get_clock_rate {
 #endif
 
 /*
- * https://www.raspberrypi.org/documentation/hardware/raspberrypi/revision-codes/README.md
+ * https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#raspberry-pi-revision-codes
  */
 struct rpi_model {
 	const char *name;
@@ -156,6 +155,11 @@ static const struct rpi_model rpi_models_new_scheme[] = {
 		"4 Model B",
 		DTB_DIR "bcm2711-rpi-4-b.dtb",
 		true,
+	},
+	[0x12] = {
+		"Zero 2 W",
+		DTB_DIR "bcm2837-rpi-zero-2-w.dtb",
+		false,
 	},
 	[0x13] = {
 		"400",
@@ -330,7 +334,7 @@ static void set_fdt_addr(void)
 /*
  * Prevent relocation from stomping on a firmware provided FDT blob.
  */
-unsigned long board_get_usable_ram_top(unsigned long total_size)
+phys_addr_t board_get_usable_ram_top(phys_size_t total_size)
 {
 	if ((gd->ram_top - fw_dtb_pointer) > SZ_64M)
 		return gd->ram_top;
@@ -419,7 +423,7 @@ int misc_init_r(void)
 	return 0;
 }
 
-static void get_board_rev(void)
+static void get_board_revision(void)
 {
 	ALLOC_CACHE_ALIGN_BUFFER(struct msg_get_board_rev, msg, 1);
 	int ret;
@@ -478,7 +482,7 @@ int board_init(void)
 	hw_watchdog_init();
 #endif
 
-	get_board_rev();
+	get_board_revision();
 
 	gd->bd->bi_boot_params = 0x100;
 
@@ -488,21 +492,77 @@ int board_init(void)
 /*
  * If the firmware passed a device tree use it for U-Boot.
  */
-void *board_fdt_blob_setup(void)
+void *board_fdt_blob_setup(int *err)
 {
-	if (fdt_magic(fw_dtb_pointer) != FDT_MAGIC)
+	*err = 0;
+	if (fdt_magic(fw_dtb_pointer) != FDT_MAGIC) {
+		*err = -ENXIO;
 		return NULL;
+	}
+
 	return (void *)fw_dtb_pointer;
+}
+
+int copy_property(void *dst, void *src, char *path, char *property)
+{
+	int dst_offset, src_offset;
+	const fdt32_t *prop;
+	int len;
+
+	src_offset = fdt_path_offset(src, path);
+	dst_offset = fdt_path_offset(dst, path);
+
+	if (src_offset < 0 || dst_offset < 0)
+		return -1;
+
+	prop = fdt_getprop(src, src_offset, property, &len);
+	if (!prop)
+		return -1;
+
+	return fdt_setprop(dst, dst_offset, property, prop, len);
+}
+
+/* Copy tweaks from the firmware dtb to the loaded dtb */
+void  update_fdt_from_fw(void *fdt, void *fw_fdt)
+{
+	/* Using dtb from firmware directly; leave it alone */
+	if (fdt == fw_fdt)
+		return;
+
+	/* The firmware provides a more precie model; so copy that */
+	copy_property(fdt, fw_fdt, "/", "model");
+
+	/* memory reserve as suggested by the firmware */
+	copy_property(fdt, fw_fdt, "/", "memreserve");
+
+	/* Adjust dma-ranges for the SD card and PCI bus as they can depend on
+	 * the SoC revision
+	 */
+	copy_property(fdt, fw_fdt, "emmc2bus", "dma-ranges");
+	copy_property(fdt, fw_fdt, "pcie0", "dma-ranges");
+
+	/* Bootloader configuration template exposes as nvmem */
+	if (copy_property(fdt, fw_fdt, "blconfig", "reg") == 0)
+		copy_property(fdt, fw_fdt, "blconfig", "status");
+
+	/* kernel address randomisation seed as provided by the firmware */
+	copy_property(fdt, fw_fdt, "/chosen", "kaslr-seed");
+
+	/* address of the PHY device as provided by the firmware  */
+	copy_property(fdt, fw_fdt, "ethernet0/mdio@e14/ethernet-phy@1", "reg");
 }
 
 int ft_board_setup(void *blob, struct bd_info *bd)
 {
-	/*
-	 * For now, we simply always add the simplefb DT node. Later, we
-	 * should be more intelligent, and e.g. only do this if no enabled DT
-	 * node exists for the "real" graphics driver.
-	 */
-	lcd_dt_simplefb_add_node(blob);
+	int node;
+
+	update_fdt_from_fw(blob, (void *)fw_dtb_pointer);
+
+	node = fdt_node_offset_by_compatible(blob, -1, "simple-framebuffer");
+	if (node < 0)
+		fdt_simplefb_add_node(blob);
+	else
+		fdt_simplefb_enable_and_mem_rsv(blob);
 
 #ifdef CONFIG_EFI_LOADER
 	/* Reserve the spin table */

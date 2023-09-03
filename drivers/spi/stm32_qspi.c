@@ -115,15 +115,8 @@ struct stm32_qspi_regs {
 #define STM32_BUSY_TIMEOUT_US		100000
 #define STM32_ABT_TIMEOUT_US		100000
 
-struct stm32_qspi_flash {
-	u32 cr;
-	u32 dcr;
-	bool initialized;
-};
-
 struct stm32_qspi_priv {
 	struct stm32_qspi_regs *regs;
-	struct stm32_qspi_flash flash[STM32_QSPI_MAX_CHIP];
 	void __iomem *mm_base;
 	resource_size_t mm_size;
 	ulong clock_rate;
@@ -150,19 +143,18 @@ static int _stm32_qspi_wait_cmd(struct stm32_qspi_priv *priv,
 	u32 sr;
 	int ret = 0;
 
-	if (op->data.nbytes) {
-		ret = readl_poll_timeout(&priv->regs->sr, sr,
-					 sr & STM32_QSPI_SR_TCF,
-					 STM32_QSPI_CMD_TIMEOUT_US);
-		if (ret) {
-			log_err("cmd timeout (stat:%#x)\n", sr);
-		} else if (readl(&priv->regs->sr) & STM32_QSPI_SR_TEF) {
-			log_err("transfer error (stat:%#x)\n", sr);
-			ret = -EIO;
-		}
-		/* clear flags */
-		writel(STM32_QSPI_FCR_CTCF | STM32_QSPI_FCR_CTEF, &priv->regs->fcr);
+	ret = readl_poll_timeout(&priv->regs->sr, sr,
+				 sr & STM32_QSPI_SR_TCF,
+				 STM32_QSPI_CMD_TIMEOUT_US);
+	if (ret) {
+		log_err("cmd timeout (stat:%#x)\n", sr);
+	} else if (readl(&priv->regs->sr) & STM32_QSPI_SR_TEF) {
+		log_err("transfer error (stat:%#x)\n", sr);
+		ret = -EIO;
 	}
+
+	/* clear flags */
+	writel(STM32_QSPI_FCR_CTCF | STM32_QSPI_FCR_CTEF, &priv->regs->fcr);
 
 	if (!ret)
 		ret = _stm32_qspi_wait_for_not_busy(priv);
@@ -173,7 +165,7 @@ static int _stm32_qspi_wait_cmd(struct stm32_qspi_priv *priv,
 static void _stm32_qspi_read_fifo(u8 *val, void __iomem *addr)
 {
 	*val = readb(addr);
-	WATCHDOG_RESET();
+	schedule();
 }
 
 static void _stm32_qspi_write_fifo(u8 *val, void __iomem *addr)
@@ -255,10 +247,6 @@ static int stm32_qspi_exec_op(struct spi_slave *slave,
 		op->cmd.opcode, op->cmd.buswidth, op->addr.buswidth,
 		op->dummy.buswidth, op->data.buswidth,
 		op->addr.val, op->data.nbytes);
-
-	ret = _stm32_qspi_wait_for_not_busy(priv);
-	if (ret)
-		return ret;
 
 	addr_max = op->addr.val + op->data.nbytes + 1;
 
@@ -412,25 +400,11 @@ static int stm32_qspi_claim_bus(struct udevice *dev)
 		return -ENODEV;
 
 	if (priv->cs_used != slave_cs) {
-		struct stm32_qspi_flash *flash = &priv->flash[slave_cs];
-
 		priv->cs_used = slave_cs;
 
-		if (flash->initialized) {
-			/* Set the configuration: speed + cs */
-			writel(flash->cr, &priv->regs->cr);
-			writel(flash->dcr, &priv->regs->dcr);
-		} else {
-			/* Set chip select */
-			clrsetbits_le32(&priv->regs->cr, STM32_QSPI_CR_FSEL,
-					priv->cs_used ? STM32_QSPI_CR_FSEL : 0);
-
-			/* Save the configuration: speed + cs */
-			flash->cr = readl(&priv->regs->cr);
-			flash->dcr = readl(&priv->regs->dcr);
-
-			flash->initialized = true;
-		}
+		/* Set chip select */
+		clrsetbits_le32(&priv->regs->cr, STM32_QSPI_CR_FSEL,
+				priv->cs_used ? STM32_QSPI_CR_FSEL : 0);
 	}
 
 	setbits_le32(&priv->regs->cr, STM32_QSPI_CR_EN);

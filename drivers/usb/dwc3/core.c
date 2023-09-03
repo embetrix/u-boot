@@ -14,6 +14,7 @@
  */
 
 #include <common.h>
+#include <clk.h>
 #include <cpu_func.h>
 #include <malloc.h>
 #include <dwc3-uboot.h>
@@ -28,12 +29,16 @@
 #include <generic-phy.h>
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
+#include <linux/bitfield.h>
+#include <linux/math64.h>
 
 #include "core.h"
 #include "gadget.h"
 #include "io.h"
 
 #include "linux-compat.h"
+
+#define NSEC_PER_SEC	1000000000L
 
 static LIST_HEAD(dwc3_list);
 /* -------------------------------------------------------------------------- */
@@ -91,6 +96,94 @@ static int dwc3_core_soft_reset(struct dwc3 *dwc)
 	dwc3_writel(dwc->regs, DWC3_GCTL, reg);
 
 	return 0;
+}
+
+/*
+ * dwc3_frame_length_adjustment - Adjusts frame length if required
+ * @dwc3: Pointer to our controller context structure
+ * @fladj: Value of GFLADJ_30MHZ to adjust frame length
+ */
+static void dwc3_frame_length_adjustment(struct dwc3 *dwc, u32 fladj)
+{
+	u32 reg;
+
+	if (dwc->revision < DWC3_REVISION_250A)
+		return;
+
+	if (fladj == 0)
+		return;
+
+	reg = dwc3_readl(dwc->regs, DWC3_GFLADJ);
+	reg &= ~DWC3_GFLADJ_30MHZ_MASK;
+	reg |= DWC3_GFLADJ_30MHZ_SDBND_SEL | fladj;
+	dwc3_writel(dwc->regs, DWC3_GFLADJ, reg);
+}
+
+/**
+ * dwc3_ref_clk_period - Reference clock period configuration
+ *		Default reference clock period depends on hardware
+ *		configuration. For systems with reference clock that differs
+ *		from the default, this will set clock period in DWC3_GUCTL
+ *		register.
+ * @dwc: Pointer to our controller context structure
+ * @ref_clk_per: reference clock period in ns
+ */
+static void dwc3_ref_clk_period(struct dwc3 *dwc)
+{
+	unsigned long period;
+	unsigned long fladj;
+	unsigned long decr;
+	unsigned long rate;
+	u32 reg;
+
+	if (dwc->ref_clk) {
+		rate = clk_get_rate(dwc->ref_clk);
+		if (!rate)
+			return;
+		period = NSEC_PER_SEC / rate;
+	} else {
+		return;
+	}
+
+	reg = dwc3_readl(dwc->regs, DWC3_GUCTL);
+	reg &= ~DWC3_GUCTL_REFCLKPER_MASK;
+	reg |=  FIELD_PREP(DWC3_GUCTL_REFCLKPER_MASK, period);
+	dwc3_writel(dwc->regs, DWC3_GUCTL, reg);
+
+	if (dwc->revision <= DWC3_REVISION_250A)
+		return;
+
+	/*
+	 * The calculation below is
+	 *
+	 * 125000 * (NSEC_PER_SEC / (rate * period) - 1)
+	 *
+	 * but rearranged for fixed-point arithmetic. The division must be
+	 * 64-bit because 125000 * NSEC_PER_SEC doesn't fit in 32 bits (and
+	 * neither does rate * period).
+	 *
+	 * Note that rate * period ~= NSEC_PER_SECOND, minus the number of
+	 * nanoseconds of error caused by the truncation which happened during
+	 * the division when calculating rate or period (whichever one was
+	 * derived from the other). We first calculate the relative error, then
+	 * scale it to units of 8 ppm.
+	 */
+	fladj = div64_u64(125000ULL * NSEC_PER_SEC, (u64)rate * period);
+	fladj -= 125000;
+
+	/*
+	 * The documented 240MHz constant is scaled by 2 to get PLS1 as well.
+	 */
+	decr = 480000000 / rate;
+
+	reg = dwc3_readl(dwc->regs, DWC3_GFLADJ);
+	reg &= ~DWC3_GFLADJ_REFCLK_FLADJ_MASK
+	    &  ~DWC3_GFLADJ_240MHZDECR
+	    &  ~DWC3_GFLADJ_240MHZDECR_PLS1;
+	reg |= FIELD_PREP(DWC3_GFLADJ_REFCLK_FLADJ_MASK, fladj)
+	    |  FIELD_PREP(DWC3_GFLADJ_240MHZDECR, decr >> 1)
+	    |  FIELD_PREP(DWC3_GFLADJ_240MHZDECR_PLS1, decr & 1);
+	dwc3_writel(dwc->regs, DWC3_GFLADJ, reg);
 }
 
 /**
@@ -441,6 +534,53 @@ static void dwc3_phy_setup(struct dwc3 *dwc)
 	mdelay(100);
 }
 
+/* set global incr burst type configuration registers */
+static void dwc3_set_incr_burst_type(struct dwc3 *dwc)
+{
+	struct udevice *dev = dwc->dev;
+	u32 cfg;
+
+	if (!dwc->incrx_size)
+		return;
+
+	cfg = dwc3_readl(dwc->regs, DWC3_GSBUSCFG0);
+
+	/* Enable Undefined Length INCR Burst and Enable INCRx Burst */
+	cfg &= ~DWC3_GSBUSCFG0_INCRBRST_MASK;
+	if (dwc->incrx_mode)
+		cfg |= DWC3_GSBUSCFG0_INCRBRSTENA;
+	switch (dwc->incrx_size) {
+	case 256:
+		cfg |= DWC3_GSBUSCFG0_INCR256BRSTENA;
+		break;
+	case 128:
+		cfg |= DWC3_GSBUSCFG0_INCR128BRSTENA;
+		break;
+	case 64:
+		cfg |= DWC3_GSBUSCFG0_INCR64BRSTENA;
+		break;
+	case 32:
+		cfg |= DWC3_GSBUSCFG0_INCR32BRSTENA;
+		break;
+	case 16:
+		cfg |= DWC3_GSBUSCFG0_INCR16BRSTENA;
+		break;
+	case 8:
+		cfg |= DWC3_GSBUSCFG0_INCR8BRSTENA;
+		break;
+	case 4:
+		cfg |= DWC3_GSBUSCFG0_INCR4BRSTENA;
+		break;
+	case 1:
+		break;
+	default:
+		dev_err(dev, "Invalid property\n");
+		break;
+	}
+
+	dwc3_writel(dwc->regs, DWC3_GSBUSCFG0, cfg);
+}
+
 /**
  * dwc3_core_init - Low-level initialization of DWC3 Core
  * @dwc: Pointer to our controller context structure
@@ -569,6 +709,14 @@ static int dwc3_core_init(struct dwc3 *dwc)
 	if (ret)
 		goto err1;
 
+	/* Adjust Frame Length */
+	dwc3_frame_length_adjustment(dwc, dwc->fladj);
+
+	/* Adjust Reference Clock Period */
+	dwc3_ref_clk_period(dwc);
+
+	dwc3_set_incr_burst_type(dwc);
+
 	return 0;
 
 err1:
@@ -631,6 +779,14 @@ static void dwc3_gadget_run(struct dwc3 *dwc)
 {
 	dwc3_writel(dwc->regs, DWC3_DCTL, DWC3_DCTL_RUN_STOP);
 	mdelay(100);
+}
+
+static void dwc3_core_stop(struct dwc3 *dwc)
+{
+	u32 reg;
+
+	reg = dwc3_readl(dwc->regs, DWC3_DCTL);
+	dwc3_writel(dwc->regs, DWC3_DCTL, reg & ~(DWC3_DCTL_RUN_STOP));
 }
 
 static void dwc3_core_exit_mode(struct dwc3 *dwc)
@@ -892,6 +1048,8 @@ void dwc3_of_parse(struct dwc3 *dwc)
 	u8 lpm_nyet_threshold;
 	u8 tx_de_emphasis;
 	u8 hird_threshold;
+	u32 val;
+	int i;
 
 	/* default to highest possible threshold */
 	lpm_nyet_threshold = 0xff;
@@ -958,6 +1116,26 @@ void dwc3_of_parse(struct dwc3 *dwc)
 
 	dwc->hird_threshold = hird_threshold
 		| (dwc->is_utmi_l1_suspend << 4);
+
+	dev_read_u32(dev, "snps,quirk-frame-length-adjustment", &dwc->fladj);
+
+	/*
+	 * Handle property "snps,incr-burst-type-adjustment".
+	 * Get the number of value from this property:
+	 * result <= 0, means this property is not supported.
+	 * result = 1, means INCRx burst mode supported.
+	 * result > 1, means undefined length burst mode supported.
+	 */
+	dwc->incrx_mode = INCRX_BURST_MODE;
+	dwc->incrx_size = 0;
+	for (i = 0; i < 8; i++) {
+		if (dev_read_u32_index(dev, "snps,incr-burst-type-adjustment",
+				       i, &val))
+			break;
+
+		dwc->incrx_mode = INCRX_UNDEF_LENGTH_BURST_MODE;
+		dwc->incrx_size = max(dwc->incrx_size, val);
+	}
 }
 
 int dwc3_init(struct dwc3 *dwc)
@@ -1033,6 +1211,7 @@ void dwc3_remove(struct dwc3 *dwc)
 	dwc3_core_exit_mode(dwc);
 	dwc3_event_buffers_cleanup(dwc);
 	dwc3_free_event_buffers(dwc);
+	dwc3_core_stop(dwc);
 	dwc3_core_exit(dwc);
 	kfree(dwc->mem);
 }

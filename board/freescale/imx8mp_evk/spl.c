@@ -1,7 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Copyright 2018-2019 NXP
+ * Copyright 2018-2019, 2021 NXP
  *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
@@ -20,6 +20,8 @@
 #include <asm/arch/ddr.h>
 #include <power/pmic.h>
 #include <power/pca9450.h>
+#include <dm/uclass.h>
+#include <dm/device.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -35,6 +37,8 @@ void spl_dram_init(void)
 
 void spl_board_init(void)
 {
+	arch_misc_init();
+
 	/*
 	 * Set GIC clock to 500Mhz for OD VDD_SOC. Kernel driver does
 	 * not allow to change it. Should set the clock after PMIC
@@ -63,7 +67,7 @@ struct i2c_pads_info i2c_pad_info1 = {
 	},
 };
 
-#ifdef CONFIG_POWER
+#if CONFIG_IS_ENABLED(POWER_LEGACY)
 #define I2C_PMIC	0
 int power_init_board(void)
 {
@@ -98,9 +102,6 @@ int power_init_board(void)
 	/* To avoid timing risk from SOC to ARM,increase VDD_ARM to OD voltage 0.95v */
 	pmic_reg_write(p, PCA9450_BUCK2OUT_DVS0, 0x1C);
 
-	/* set WDOG_B_CFG to cold reset */
-	pmic_reg_write(p, PCA9450_RESET_CTRL, 0xA1);
-
 	return 0;
 }
 #endif
@@ -123,8 +124,6 @@ void board_init_f(ulong dummy)
 	arch_cpu_init();
 
 	init_uart_clk(1);
-
-	board_early_init_f();
 
 	ret = spl_early_init();
 	if (ret) {

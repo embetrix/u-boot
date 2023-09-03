@@ -5,6 +5,7 @@
  */
 
 #include <common.h>
+#include <clock_legacy.h>
 #include <command.h>
 #include <env.h>
 #include <fdt_support.h>
@@ -87,7 +88,7 @@ int i2c_multiplexer_select_vid_channel(u8 channel)
 
 int brd_mux_lane_to_slot(void)
 {
-	ccsr_gur_t *gur = (void *)(CONFIG_SYS_MPC85xx_GUTS_ADDR);
+	ccsr_gur_t *gur = (void *)(CFG_SYS_MPC85xx_GUTS_ADDR);
 	u32 srds_prtcl_s1;
 
 	srds_prtcl_s1 = in_be32(&gur->rcwsr[4]) &
@@ -136,14 +137,14 @@ int brd_mux_lane_to_slot(void)
 		break;
 	case 0x66:
 	case 0x67:
-		/* SD1(A:D) => XFI cage
+		/* SD1(A:D) => 10GBase-R cage
 		 * SD1(E:H) => SLOT1 PCIe4
 		 */
 		QIXIS_WRITE(brdcfg[12], 0xfe);
 		break;
 	case 0x6a:
 	case 0x6b:
-		/* SD1(A:D) => XFI cage
+		/* SD1(A:D) => 10GBase-R cage
 		 * SD1(E)   => SLOT1 PCIe4
 		 * SD1(F:H) => SLOT2 SGMII
 		 */
@@ -151,14 +152,14 @@ int brd_mux_lane_to_slot(void)
 		break;
 	case 0x6c:
 	case 0x6d:
-		/* SD1(A:B) => XFI cage
+		/* SD1(A:B) => 10GBase-R cage
 		 * SD1(C:D) => SLOT3 SGMII
 		 * SD1(E:H) => SLOT1 PCIe4
 		 */
 		QIXIS_WRITE(brdcfg[12], 0xda);
 		break;
 	case 0x6e:
-		/* SD1(A:B) => SFP Module, XFI
+		/* SD1(A:B) => SFP Module, 10GBase-R
 		 * SD1(C:D) => SLOT3 SGMII
 		 * SD1(E:F) => SLOT1 PCIe4 x2
 		 * SD1(G:H) => SLOT2 SGMII
@@ -281,7 +282,7 @@ static void esdhc_adapter_card_ident(void)
 
 int board_early_init_r(void)
 {
-	const unsigned int flashbase = CONFIG_SYS_FLASH_BASE;
+	const unsigned int flashbase = CFG_SYS_FLASH_BASE;
 	int flash_esel = find_tlb_idx((void *)flashbase, 1);
 
 	/*
@@ -302,7 +303,7 @@ int board_early_init_r(void)
 		disable_tlb(flash_esel);
 	}
 
-	set_tlb(1, flashbase, CONFIG_SYS_FLASH_BASE_PHYS,
+	set_tlb(1, flashbase, CFG_SYS_FLASH_BASE_PHYS,
 		MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
 		0, flash_esel, BOOKE_PAGESZ_256M, 1);
 

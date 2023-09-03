@@ -5,7 +5,7 @@
 # Entry-type module for expanded U-Boot TPL binary
 #
 
-from patman import tout
+from u_boot_pylib import tout
 
 from binman import state
 from binman.etype.blob_phase import Entry_blob_phase
@@ -39,7 +39,7 @@ class Entry_u_boot_tpl_expanded(Entry_blob_phase):
     @classmethod
     def UseExpanded(cls, node, etype, new_etype):
         val = state.GetEntryArgBool('tpl-dtb')
-        tout.DoOutput(tout.INFO if val else tout.DETAIL,
+        tout.do_output(tout.INFO if val else tout.DETAIL,
                       "Node '%s': etype '%s': %s %sselected" %
                       (node.path, etype, new_etype, '' if val else 'not '))
         return val

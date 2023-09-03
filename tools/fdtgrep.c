@@ -438,8 +438,7 @@ static int dump_fdt_regions(struct display_info *disp, const void *blob,
 	fdt = (struct fdt_header *)out;
 	memset(fdt, '\0', sizeof(*fdt));
 	fdt_set_magic(fdt, FDT_MAGIC);
-	struct_start = FDT_ALIGN(sizeof(struct fdt_header),
-					sizeof(struct fdt_reserve_entry));
+	struct_start = sizeof(struct fdt_header);
 	fdt_set_off_mem_rsvmap(fdt, struct_start);
 	fdt_set_version(fdt, FDT_LAST_SUPPORTED_VERSION);
 	fdt_set_last_comp_version(fdt, FDT_FIRST_SUPPORTED_VERSION);
@@ -713,15 +712,19 @@ int utilfdt_read_err_len(const char *filename, char **buffp, off_t *len)
 
 	/* Loop until we have read everything */
 	buf = malloc(bufsize);
-	if (!buf)
+	if (!buf) {
+		close(fd);
 		return -ENOMEM;
+	}
 	do {
 		/* Expand the buffer to hold the next chunk */
 		if (offset == bufsize) {
 			bufsize *= 2;
 			buf = realloc(buf, bufsize);
-			if (!buf)
+			if (!buf) {
+				close(fd);
 				return -ENOMEM;
+			}
 		}
 
 		ret = read(fd, &buf[offset], bufsize - offset);

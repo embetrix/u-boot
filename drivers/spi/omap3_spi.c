@@ -142,7 +142,7 @@ static int omap3_spi_read(struct omap3_spi_priv *priv, unsigned int len,
 			}
 		}
 
-		/* Disable the channel to prevent furher receiving */
+		/* Disable the channel to prevent further receiving */
 		if (i == (len - 1))
 			omap3_spi_set_enable(priv, OMAP3_MCSPI_CHCTRL_DIS);
 
@@ -347,20 +347,28 @@ static void _omap3_spi_set_wordlen(struct omap3_spi_priv *priv)
 	omap3_spi_write_chconf(priv, confr);
 }
 
-static void spi_reset(struct mcspi *regs)
+static void spi_reset(struct omap3_spi_priv *priv)
 {
 	unsigned int tmp;
 
-	writel(OMAP3_MCSPI_SYSCONFIG_SOFTRESET, &regs->sysconfig);
+	writel(OMAP3_MCSPI_SYSCONFIG_SOFTRESET, &priv->regs->sysconfig);
 	do {
-		tmp = readl(&regs->sysstatus);
+		tmp = readl(&priv->regs->sysstatus);
 	} while (!(tmp & OMAP3_MCSPI_SYSSTATUS_RESETDONE));
 
 	writel(OMAP3_MCSPI_SYSCONFIG_AUTOIDLE |
 	       OMAP3_MCSPI_SYSCONFIG_ENAWAKEUP |
-	       OMAP3_MCSPI_SYSCONFIG_SMARTIDLE, &regs->sysconfig);
+	       OMAP3_MCSPI_SYSCONFIG_SMARTIDLE, &priv->regs->sysconfig);
 
-	writel(OMAP3_MCSPI_WAKEUPENABLE_WKEN, &regs->wakeupenable);
+	writel(OMAP3_MCSPI_WAKEUPENABLE_WKEN, &priv->regs->wakeupenable);
+
+	/*
+	 * Set the same default mode for each channel, especially CS polarity
+	 * which must be common for all SPI slaves before any transfer.
+	 */
+	for (priv->cs = 0 ; priv->cs < OMAP4_MCSPI_CHAN_NB ; priv->cs++)
+		_omap3_spi_set_mode(priv);
+	priv->cs = 0;
 }
 
 static void _omap3_spi_claim_bus(struct omap3_spi_priv *priv)
@@ -430,7 +438,7 @@ static int omap3_spi_probe(struct udevice *dev)
 	priv->pin_dir = plat->pin_dir;
 	priv->wordlen = SPI_DEFAULT_WORDLEN;
 
-	spi_reset(priv->regs);
+	spi_reset(priv);
 
 	return 0;
 }
@@ -481,7 +489,7 @@ static const struct dm_spi_ops omap3_spi_ops = {
 	 */
 };
 
-#if CONFIG_IS_ENABLED(OF_CONTROL) && !CONFIG_IS_ENABLED(OF_PLATDATA)
+#if CONFIG_IS_ENABLED(OF_REAL)
 static struct omap2_mcspi_platform_config omap2_pdata = {
 	.regs_offset = 0,
 };
@@ -516,7 +524,7 @@ U_BOOT_DRIVER(omap3_spi) = {
 	.name   = "omap3_spi",
 	.id     = UCLASS_SPI,
 	.flags	= DM_FLAG_PRE_RELOC,
-#if CONFIG_IS_ENABLED(OF_CONTROL) && !CONFIG_IS_ENABLED(OF_PLATDATA)
+#if CONFIG_IS_ENABLED(OF_REAL)
 	.of_match = omap3_spi_ids,
 	.of_to_plat = omap3_spi_of_to_plat,
 	.plat_auto	= sizeof(struct omap3_spi_plat),

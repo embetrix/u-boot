@@ -47,6 +47,7 @@ will be required. The following is an incomplete list:
 * coreutils
 * dosfstools
 * efitools
+* guestfs-tools
 * mount
 * mtools
 * sbsigntool
@@ -62,6 +63,24 @@ The test script supports either:
 - Executing an external "hook" scripts to flash a U-Boot binary onto a
   physical board, attach to the board's console stream, and reset the board.
   Further details are described later.
+
+The usage of command 'sudo' should be avoided in tests. To create disk images
+use command virt-make-fs which is provided by package guestfs-tools. This
+command creates a virtual machine with QEMU in which the disk image is
+generated.
+
+Command virt-make-fs needs read access to the current kernel. On Ubuntu only
+root has this privilege. You can add a script /etc/initramfs-tools/hooks/vmlinuz
+with the following content to overcome the problem:
+
+.. code-block:: bash
+
+    #!/bin/sh
+    echo "chmod a+r vmlinuz-*"
+    chmod a+r /boot/vmlinuz-*
+
+The script should be chmod 755. It will be invoked whenever the initial RAM file
+system is updated.
 
 Using `virtualenv` to provide requirements
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -102,6 +121,56 @@ then print a summary of the test process. A complete log of the test session
 will be written to `${build_dir}/test-log.html`. This is best viewed in a web
 browser, but may be read directly as plain text, perhaps with the aid of the
 `html2text` utility.
+
+If sandbox crashes (e.g. with a segfault) you will see message like this::
+
+
+    test/py/u_boot_spawn.py:171: in expect
+        c = os.read(self.fd, 1024).decode(errors='replace')
+    E   ValueError: U-Boot exited with signal 11 (Signals.SIGSEGV)
+
+
+Controlling output
+~~~~~~~~~~~~~~~~~~
+
+By default a short backtrace is reported. If you would like a longer one,
+pass ``--tb=long`` when running the test. See the pytest documentation for
+more options.
+
+Running tests in parallel
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Note: Not all tests can run in parallel at present, so the usual approach is
+to just run those that can.
+
+First install support for parallel tests::
+
+    sudo apt install python3-pytest-xdist
+
+or:::
+
+    pip3 install pytest-xdist
+
+Then run the tests in parallel using the -n flag::
+
+    test/py/test.py -B sandbox --build --build-dir /tmp/b/sandbox -q -k \
+        'not slow and not bootstd and not spi_flash' -n16
+
+You can also use `make pcheck` to run all tests in parallel. This uses a maximum
+of 16 threads, since the setup time is significant and there are under 1000
+tests.
+
+Note that the `test-log.html` output does not work correctly at present with
+parallel testing. All the threads write to it at once, so it is garbled.
+
+Note that the `tools/` tests still run each tool's tests once after the other,
+although within that, they do run in parallel. So for example, the buildman
+tests run in parallel, then the binman tests run in parallel. There would be a
+significant advantage to running them all in parallel together, but that would
+require a large amount of refactoring, e.g. with more use of pytest fixtures.
+The code-coverage tests are omitted since they cannot run in parallel due to a
+Python limitation.
+
 
 Testing under a debugger
 ~~~~~~~~~~~~~~~~~~~~~~~~

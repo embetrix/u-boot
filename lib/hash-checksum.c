@@ -17,14 +17,16 @@
 #include <image.h>
 
 int hash_calculate(const char *name,
-		    const struct image_region region[],
+		    const struct image_region *region,
 		    int region_count, uint8_t *checksum)
 {
 	struct hash_algo *algo;
 	int ret = 0;
 	void *ctx;
-	uint32_t i;
-	i = 0;
+	int i;
+
+	if (region_count < 1)
+		return -EINVAL;
 
 	ret = hash_progressive_lookup_algo(name, &algo);
 	if (ret)

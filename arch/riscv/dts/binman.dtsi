@@ -27,7 +27,7 @@
 					os = "U-Boot";
 					arch = "riscv";
 					compression = "none";
-					load = <CONFIG_SYS_TEXT_BASE>;
+					load = <CONFIG_TEXT_BASE>;
 
 					uboot_blob: blob-ext {
 						filename = "u-boot-nodtb.bin";
@@ -45,10 +45,11 @@
 
 					opensbi_blob: opensbi {
 						filename = "fw_dynamic.bin";
+						missing-msg = "opensbi";
 					};
 				};
 
-#ifndef CONFIG_OF_PRIOR_STAGE
+#ifndef CONFIG_OF_BOARD
 				@fdt-SEQ {
 					description = "NAME";
 					type = "flat_dt";
@@ -60,7 +61,7 @@
 			configurations {
 				default = "conf-1";
 
-#ifndef CONFIG_OF_PRIOR_STAGE
+#ifndef CONFIG_OF_BOARD
 				@conf-SEQ {
 #else
 				conf-1 {
@@ -68,7 +69,7 @@
 					description = "NAME";
 					firmware = "opensbi";
 					loadables = "uboot";
-#ifndef CONFIG_OF_PRIOR_STAGE
+#ifndef CONFIG_OF_BOARD
 					fdt = "fdt-SEQ";
 #endif
 				};

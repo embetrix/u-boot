@@ -11,7 +11,6 @@
 #include <env.h>
 #include <fastboot.h>
 #include <fdt_support.h>
-#include <image.h>
 #include <init.h>
 #include <malloc.h>
 #include <net.h>
@@ -22,7 +21,6 @@
 #include <errno.h>
 #include <asm/global_data.h>
 #include <asm/omap_common.h>
-#include <asm/omap_sec_common.h>
 #include <asm/emif.h>
 #include <asm/gpio.h>
 #include <asm/arch/gpio.h>
@@ -144,13 +142,13 @@ static const struct emif_regs beagle_x15_emif1_ddr3_532mhz_emif_regs = {
 	.read_idle_ctrl			= 0x00050000,
 	.zq_config			= 0x5007190b,
 	.temp_alert_config		= 0x00000000,
-	.emif_ddr_phy_ctlr_1_init 	= 0x0024400b,
+	.emif_ddr_phy_ctlr_1_init	= 0x0024400b,
 	.emif_ddr_phy_ctlr_1		= 0x0e24400b,
-	.emif_ddr_ext_phy_ctrl_1 	= 0x10040100,
-	.emif_ddr_ext_phy_ctrl_2 	= 0x00910091,
-	.emif_ddr_ext_phy_ctrl_3 	= 0x00950095,
-	.emif_ddr_ext_phy_ctrl_4 	= 0x009b009b,
-	.emif_ddr_ext_phy_ctrl_5 	= 0x009e009e,
+	.emif_ddr_ext_phy_ctrl_1	= 0x10040100,
+	.emif_ddr_ext_phy_ctrl_2	= 0x00910091,
+	.emif_ddr_ext_phy_ctrl_3	= 0x00950095,
+	.emif_ddr_ext_phy_ctrl_4	= 0x009b009b,
+	.emif_ddr_ext_phy_ctrl_5	= 0x009e009e,
 	.emif_rd_wr_lvl_rmp_win		= 0x00000000,
 	.emif_rd_wr_lvl_rmp_ctl		= 0x80000000,
 	.emif_rd_wr_lvl_ctl		= 0x00000000,
@@ -208,13 +206,13 @@ static const struct emif_regs beagle_x15_emif2_ddr3_532mhz_emif_regs = {
 	.read_idle_ctrl			= 0x00050000,
 	.zq_config			= 0x5007190b,
 	.temp_alert_config		= 0x00000000,
-	.emif_ddr_phy_ctlr_1_init 	= 0x0024400b,
+	.emif_ddr_phy_ctlr_1_init	= 0x0024400b,
 	.emif_ddr_phy_ctlr_1		= 0x0e24400b,
-	.emif_ddr_ext_phy_ctrl_1 	= 0x10040100,
-	.emif_ddr_ext_phy_ctrl_2 	= 0x00910091,
-	.emif_ddr_ext_phy_ctrl_3 	= 0x00950095,
-	.emif_ddr_ext_phy_ctrl_4 	= 0x009b009b,
-	.emif_ddr_ext_phy_ctrl_5 	= 0x009e009e,
+	.emif_ddr_ext_phy_ctrl_1	= 0x10040100,
+	.emif_ddr_ext_phy_ctrl_2	= 0x00910091,
+	.emif_ddr_ext_phy_ctrl_3	= 0x00950095,
+	.emif_ddr_ext_phy_ctrl_4	= 0x009b009b,
+	.emif_ddr_ext_phy_ctrl_5	= 0x009e009e,
 	.emif_rd_wr_lvl_rmp_win		= 0x00000000,
 	.emif_rd_wr_lvl_rmp_ctl		= 0x80000000,
 	.emif_rd_wr_lvl_ctl		= 0x00000000,
@@ -661,7 +659,7 @@ bool am571x_idk_needs_lcd(void)
 int board_init(void)
 {
 	gpmc_init();
-	gd->bd->bi_boot_params = (CONFIG_SYS_SDRAM_BASE + 0x100);
+	gd->bd->bi_boot_params = (CFG_SYS_SDRAM_BASE + 0x100);
 
 	return 0;
 }
@@ -1174,7 +1172,7 @@ int board_fit_config_name_match(const char *name)
 }
 #endif
 
-#if CONFIG_IS_ENABLED(FASTBOOT) && !CONFIG_IS_ENABLED(ENV_IS_NOWHERE)
+#if IS_ENABLED(CONFIG_FASTBOOT) && !CONFIG_IS_ENABLED(ENV_IS_NOWHERE)
 int fastboot_set_reboot_flag(enum fastboot_reboot_reason reason)
 {
 	if (reason != FASTBOOT_REBOOT_REASON_BOOTLOADER)
@@ -1196,19 +1194,4 @@ static int board_bootmode_has_emmc(void)
 
 	return 0;
 }
-#endif
-
-#ifdef CONFIG_TI_SECURE_DEVICE
-void board_fit_image_post_process(const void *fit, int node, void **p_image,
-				  size_t *p_size)
-{
-	secure_boot_verify_image(p_image, p_size);
-}
-
-void board_tee_image_process(ulong tee_image, size_t tee_size)
-{
-	secure_tee_install((u32)tee_image);
-}
-
-U_BOOT_FIT_LOADABLE_HANDLER(IH_TYPE_TEE, board_tee_image_process);
 #endif

@@ -51,16 +51,17 @@ static int shc_eeprom_valid;
 /*
  * Read header information from EEPROM into global structure.
  */
+#define EEPROM_ADDR	0x50
 static int read_eeprom(void)
 {
 	/* Check if baseboard eeprom is available */
-	if (i2c_probe(CONFIG_SYS_I2C_EEPROM_ADDR)) {
+	if (i2c_probe(EEPROM_ADDR)) {
 		puts("Could not probe the EEPROM; something fundamentally wrong on the I2C bus.\n");
 		return -ENODEV;
 	}
 
 	/* read the eeprom using i2c */
-	if (i2c_read(CONFIG_SYS_I2C_EEPROM_ADDR, 0, 2, (uchar *)&header,
+	if (i2c_read(EEPROM_ADDR, 0, 2, (uchar *)&header,
 		     sizeof(header))) {
 		puts("Could not read the EEPROM; something fundamentally wrong on the I2C bus.\n");
 		return -EIO;
@@ -448,7 +449,7 @@ int board_init(void)
 	if (read_eeprom() < 0)
 		puts("EEPROM Content Invalid.\n");
 
-	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+	gd->bd->bi_boot_params = CFG_SYS_SDRAM_BASE + 0x100;
 #if defined(CONFIG_NOR) || defined(CONFIG_MTD_RAW_NAND)
 	gpmc_init();
 #endif

@@ -775,7 +775,7 @@ static inline void ufshcd_prepare_utp_nop_upiu(struct ufs_hba *hba)
 
 	/* command descriptor fields */
 	ucd_req_ptr->header.dword_0 =
-			UPIU_HEADER_DWORD(UPIU_TRANSACTION_NOP_OUT, 0, 0, 0x1f);
+			UPIU_HEADER_DWORD(UPIU_TRANSACTION_NOP_OUT, 0, 0, TASK_TAG);
 	/* clear rest of the fields of basic header */
 	ucd_req_ptr->header.dword_1 = 0;
 	ucd_req_ptr->header.dword_2 = 0;
@@ -1880,7 +1880,7 @@ int ufshcd_probe(struct udevice *ufs_dev, struct ufs_hba_ops *hba_ops)
 
 	hba->dev = ufs_dev;
 	hba->ops = hba_ops;
-	hba->mmio_base = (void *)dev_read_addr(ufs_dev);
+	hba->mmio_base = dev_read_addr_ptr(ufs_dev);
 
 	/* Set descriptor lengths to specification defaults */
 	ufshcd_def_desc_sizes(hba);

@@ -6,68 +6,69 @@
 #define __CONFIG_H
 
 /* Timers for fasp(TIMCLK) */
-#define CONFIG_SYS_HZ			1000		/* 1 msec */
-#define CONFIG_SYS_TIMERBASE		0x31080000	/* AP Timer 1 (ARM-SP804) */
+#define CFG_SYS_TIMERBASE		0x31080000	/* AP Timer 1 (ARM-SP804) */
 
 /*
  * SDRAM (for initialize)
  */
-#define CONFIG_SYS_SDRAM_BASE		(0x80000000)	/* Start address of DDR3 */
+#define CFG_SYS_SDRAM_BASE		(0x80000000)	/* Start address of DDR3 */
 #define PHYS_SDRAM_SIZE			(0x7c000000)	/* Default size (2GB - Secure memory) */
 
-#define CONFIG_VERY_BIG_RAM				/* SynQuacer supports up to 64GB */
-#define CONFIG_MAX_MEM_MAPPED		PHYS_SDRAM_SIZE
+#define CFG_MAX_MEM_MAPPED		PHYS_SDRAM_SIZE
 
 #define SQ_DRAMINFO_BASE		(0x2e00ffc0)	/* DRAM info from TF-A */
 
 /*
  * Boot info
  */
-#define CONFIG_SYS_INIT_SP_ADDR		(0xe0000000)	/* stack of init proccess */
-#define CONFIG_SYS_MALLOC_LEN		(0x01000000)	/* 16Mbyte size of malloc() */
-#define CONFIG_SYS_LOAD_ADDR		CONFIG_SYS_SDRAM_BASE /* default kernel load address */
 
 /*
  * Hardware drivers support
  */
 
 /* RTC */
-#define CONFIG_SYS_I2C_RTC_ADDR		0x51
+#define CFG_SYS_I2C_RTC_ADDR		0x51
 
 /* Serial (pl011)       */
 #define UART_CLK			(62500000)
-#define CONFIG_SERIAL_MULTI
-#define CONFIG_PL011_SERIAL
-#define CONFIG_PL011_CLOCK		UART_CLK
-#define CONFIG_PL01x_PORTS		{(void *)(0x2a400000)}
-
-#define CONFIG_ENV_OVERWRITE		/* ethaddr can be reprogrammed */
+#define CFG_PL011_CLOCK		UART_CLK
+#define CFG_PL01x_PORTS		{(void *)(0x2a400000)}
 
 /* Support MTD */
-#define CONFIG_SYS_MAX_FLASH_BANKS	1
-#define CONFIG_SYS_FLASH_BASE		(0x08000000)
-#define CONFIG_SYS_FLASH_BANKS_LIST	{CONFIG_SYS_FLASH_BASE}
-
-#define CONFIG_SYS_MEMTEST_START	(CONFIG_SYS_SDRAM_BASE + (512 * 1024))
-#define CONFIG_SYS_MEMTEST_END		(CONFIG_SYS_SDRAM_BASE + PHYS_SDRAM_SIZE)
-
-#define CONFIG_BAUDRATE			115200
-#define CONFIG_SYS_BAUDRATE_TABLE	{115200, 19200, 38400, 57600, 9600 }
-
-#define CONFIG_SYS_CBSIZE		1024
-#define CONFIG_SYS_MAXARGS		128
-#define CONFIG_SYS_PBSIZE		(CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
+#define CFG_SYS_FLASH_BASE		(0x08000000)
+#define CFG_SYS_FLASH_BANKS_LIST	{CFG_SYS_FLASH_BASE}
 
 /* Since U-Boot 64bit PCIe support is limited, disable 64bit MMIO support */
-/* #define CONFIG_SYS_PCI_64BIT		1 */
 
+#ifdef CONFIG_FWU_MULTI_BANK_UPDATE
+#define DEFAULT_DFU_ALT_INFO
+#else
 #define DEFAULT_DFU_ALT_INFO "dfu_alt_info="				\
-			"mtd mx66u51235f=u-boot.bin raw 200000 100000;"	\
+			"mtd nor1=u-boot.bin raw 200000 100000;"	\
 			"fip.bin raw 180000 78000;"			\
 			"optee.bin raw 500000 100000\0"
+#endif
+
+/* GUIDs for capsule updatable firmware images */
+#define DEVELOPERBOX_UBOOT_IMAGE_GUID \
+	EFI_GUID(0x53a92e83, 0x4ef4, 0x473a, 0x8b, 0x0d, \
+		 0xb5, 0xd8, 0xc7, 0xb2, 0xd6, 0x00)
+
+#ifdef CONFIG_FWU_MULTI_BANK_UPDATE
+#define DEVELOPERBOX_FIP_IMAGE_GUID \
+	EFI_GUID(0x7d6dc310, 0x52ca, 0x43b8, 0xb7, 0xb9, \
+		 0xf9, 0xd6, 0xc5, 0x01, 0xd1, 0x08)
+#else
+#define DEVELOPERBOX_FIP_IMAGE_GUID \
+	EFI_GUID(0x880866e9, 0x84ba, 0x4793, 0xa9, 0x08, \
+		 0x33, 0xe0, 0xb9, 0x16, 0xf3, 0x98)
+#endif
+
+#define DEVELOPERBOX_OPTEE_IMAGE_GUID \
+	EFI_GUID(0xc1b629f1, 0xce0e, 0x4894, 0x82, 0xbf, \
+		 0xf0, 0xa3, 0x83, 0x87, 0xe6, 0x30)
 
 /* Distro boot settings */
-#ifndef CONFIG_SPL_BUILD
 #ifdef CONFIG_CMD_USB
 #define BOOT_TARGET_DEVICE_USB(func)	func(USB, usb, 0)
 #else
@@ -99,11 +100,8 @@
 	BOOT_TARGET_DEVICE_NVME(func)	\
 
 #include <config_distro_bootcmd.h>
-#else /* CONFIG_SPL_BUILD */
-#define BOOTENV
-#endif
 
-#define	CONFIG_EXTRA_ENV_SETTINGS		\
+#define	CFG_EXTRA_ENV_SETTINGS		\
 	"fdt_addr_r=0x9fe00000\0"		\
 	"kernel_addr_r=0x90000000\0"		\
 	"ramdisk_addr_r=0xa0000000\0"		\

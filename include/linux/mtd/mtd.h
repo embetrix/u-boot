@@ -25,6 +25,7 @@
 #if IS_ENABLED(CONFIG_DM)
 #include <dm/device.h>
 #endif
+#include <dm/ofnode.h>
 
 #define MAX_MTD_DEVICES 32
 #endif
@@ -51,7 +52,6 @@ struct erase_info {
 	u_long retries;
 	unsigned dev;
 	unsigned cell;
-	void (*callback) (struct erase_info *self);
 	u_long priv;
 	u_char state;
 	struct erase_info *next;
@@ -122,7 +122,7 @@ struct mtd_oob_region {
  * @ecc: function returning an ECC region in the OOB area.
  *	 Should return -ERANGE if %section exceeds the total number of
  *	 ECC sections.
- * @free: function returning a free region in the OOB area.
+ * @rfree: function returning a free region in the OOB area.
  *	  Should return -ERANGE if %section exceeds the total number of
  *	  free sections.
  */
@@ -306,6 +306,7 @@ struct mtd_info {
 	struct device dev;
 #else
 	struct udevice *dev;
+	ofnode flash_node;
 #endif
 	int usecount;
 
@@ -534,16 +535,6 @@ extern void register_mtd_user (struct mtd_notifier *new);
 extern int unregister_mtd_user (struct mtd_notifier *old);
 #endif
 void *mtd_kmalloc_up_to(const struct mtd_info *mtd, size_t *size);
-
-#ifdef CONFIG_MTD_PARTITIONS
-void mtd_erase_callback(struct erase_info *instr);
-#else
-static inline void mtd_erase_callback(struct erase_info *instr)
-{
-	if (instr->callback)
-		instr->callback(instr);
-}
-#endif
 
 static inline int mtd_is_bitflip(int err) {
 	return err == -EUCLEAN;

@@ -11,9 +11,9 @@ import tempfile
 import urllib.request, urllib.error, urllib.parse
 
 from buildman import bsettings
-from patman import command
-from patman import terminal
-from patman import tools
+from u_boot_pylib import command
+from u_boot_pylib import terminal
+from u_boot_pylib import tools
 
 (PRIORITY_FULL_PREFIX, PRIORITY_PREFIX_GCC, PRIORITY_PREFIX_GCC_PATH,
     PRIORITY_CALC) = list(range(4))
@@ -99,7 +99,7 @@ class Toolchain:
         else:
             self.priority = priority
         if test:
-            result = command.RunPipe([cmd], capture=True, env=env,
+            result = command.run_pipe([cmd], capture=True, env=env,
                                      raise_on_error=False)
             self.ok = result.return_code == 0
             if verbose:
@@ -139,7 +139,7 @@ class Toolchain:
         """Get toolchain wrapper from the setting file.
         """
         value = ''
-        for name, value in bsettings.GetItems('toolchain-wrapper'):
+        for name, value in bsettings.get_items('toolchain-wrapper'):
             if not value:
                 print("Warning: Wrapper not found")
         if value:
@@ -156,9 +156,10 @@ class Toolchain:
         Returns:
             Value of that environment variable or arguments
         """
-        wrapper = self.GetWrapper()
         if which == VAR_CROSS_COMPILE:
-            return wrapper + os.path.join(self.path, self.cross)
+            wrapper = self.GetWrapper()
+            base = '' if self.arch == 'sandbox' else self.path
+            return wrapper + os.path.join(base, self.cross)
         elif which == VAR_PATH:
             return self.path
         elif which == VAR_ARCH:
@@ -201,11 +202,11 @@ class Toolchain:
             # We'll use MakeArgs() to provide this
             pass
         elif full_path:
-            env[b'CROSS_COMPILE'] = tools.ToBytes(
+            env[b'CROSS_COMPILE'] = tools.to_bytes(
                 wrapper + os.path.join(self.path, self.cross))
         else:
-            env[b'CROSS_COMPILE'] = tools.ToBytes(wrapper + self.cross)
-            env[b'PATH'] = tools.ToBytes(self.path) + b':' + env[b'PATH']
+            env[b'CROSS_COMPILE'] = tools.to_bytes(wrapper + self.cross)
+            env[b'PATH'] = tools.to_bytes(self.path) + b':' + env[b'PATH']
 
         env[b'LC_ALL'] = b'C'
 
@@ -248,7 +249,7 @@ class Toolchains:
         self.prefixes = {}
         self.paths = []
         self.override_toolchain = override_toolchain
-        self._make_flags = dict(bsettings.GetItems('make-flags'))
+        self._make_flags = dict(bsettings.get_items('make-flags'))
 
     def GetPathList(self, show_warning=True):
         """Get a list of available toolchain paths
@@ -260,12 +261,12 @@ class Toolchains:
             List of strings, each a path to a toolchain mentioned in the
             [toolchain] section of the settings file.
         """
-        toolchains = bsettings.GetItems('toolchain')
+        toolchains = bsettings.get_items('toolchain')
         if show_warning and not toolchains:
             print(("Warning: No tool chains. Please run 'buildman "
                    "--fetch-arch all' to download all available toolchains, or "
                    "add a [toolchain] section to your buildman config file "
-                   "%s. See README for details" %
+                   "%s. See buildman.rst for details" %
                    bsettings.config_fname))
 
         paths = []
@@ -282,7 +283,7 @@ class Toolchains:
         Args:
             show_warning: True to show a warning if there are no tool chains.
         """
-        self.prefixes = bsettings.GetItems('toolchain-prefix')
+        self.prefixes = bsettings.get_items('toolchain-prefix')
         self.paths += self.GetPathList(show_warning)
 
     def Add(self, fname, test=True, verbose=False, priority=PRIORITY_CALC,
@@ -381,7 +382,7 @@ class Toolchains:
     def List(self):
         """List out the selected toolchains for each architecture"""
         col = terminal.Color()
-        print(col.Color(col.BLUE, 'List of available toolchains (%d):' %
+        print(col.build(col.BLUE, 'List of available toolchains (%d):' %
                         len(self.toolchains)))
         if len(self.toolchains):
             for key, value in sorted(self.toolchains.items()):
@@ -398,7 +399,7 @@ class Toolchains:
         returns:
             toolchain object, or None if none found
         """
-        for tag, value in bsettings.GetItems('toolchain-alias'):
+        for tag, value in bsettings.get_items('toolchain-alias'):
             if arch == tag:
                 for alias in value.split():
                     if alias in self.toolchains:
@@ -420,7 +421,7 @@ class Toolchains:
         Returns:
             Resolved string
 
-        >>> bsettings.Setup()
+        >>> bsettings.setup(None)
         >>> tcs = Toolchains()
         >>> tcs.Add('fred', False)
         >>> var_dict = {'oblique' : 'OBLIQUE', 'first' : 'fi${second}rst', \
@@ -441,7 +442,7 @@ class Toolchains:
             args = args[:m.start(0)] + value + args[m.end(0):]
         return args
 
-    def GetMakeArguments(self, board):
+    def GetMakeArguments(self, brd):
         """Returns 'make' arguments for a given board
 
         The flags are in a section called 'make-flags'. Flags are named
@@ -462,13 +463,13 @@ class Toolchains:
         A special 'target' variable is set to the board target.
 
         Args:
-            board: Board object for the board to check.
+            brd: Board object for the board to check.
         Returns:
             'make' flags for that board, or '' if none
         """
-        self._make_flags['target'] = board.target
+        self._make_flags['target'] = brd.target
         arg_str = self.ResolveReferences(self._make_flags,
-                           self._make_flags.get(board.target, ''))
+                           self._make_flags.get(brd.target, ''))
         args = re.findall("(?:\".*?\"|\S)+", arg_str)
         i = 0
         while i < len(args):
@@ -494,17 +495,17 @@ class Toolchains:
             else
                 URL containing this toolchain, if avaialble, else None
         """
-        arch = command.OutputOneLine('uname', '-m')
+        arch = command.output_one_line('uname', '-m')
         if arch == 'aarch64':
             arch = 'arm64'
         base = 'https://www.kernel.org/pub/tools/crosstool/files/bin'
-        versions = ['9.2.0', '7.3.0', '6.4.0', '4.9.4']
+        versions = ['13.1.0', '12.2.0']
         links = []
         for version in versions:
             url = '%s/%s/%s/' % (base, arch, version)
             print('Checking: %s' % url)
             response = urllib.request.urlopen(url)
-            html = tools.ToString(response.read())
+            html = tools.to_string(response.read())
             parser = MyHTMLParser(fetch_arch)
             parser.feed(html)
             if fetch_arch == 'list':
@@ -514,50 +515,6 @@ class Toolchains:
         if fetch_arch == 'list':
             return arch, links
         return None
-
-    def Download(self, url):
-        """Download a file to a temporary directory
-
-        Args:
-            url: URL to download
-        Returns:
-            Tuple:
-                Temporary directory name
-                Full path to the downloaded archive file in that directory,
-                    or None if there was an error while downloading
-        """
-        print('Downloading: %s' % url)
-        leaf = url.split('/')[-1]
-        tmpdir = tempfile.mkdtemp('.buildman')
-        response = urllib.request.urlopen(url)
-        fname = os.path.join(tmpdir, leaf)
-        fd = open(fname, 'wb')
-        meta = response.info()
-        size = int(meta.get('Content-Length'))
-        done = 0
-        block_size = 1 << 16
-        status = ''
-
-        # Read the file in chunks and show progress as we go
-        while True:
-            buffer = response.read(block_size)
-            if not buffer:
-                print(chr(8) * (len(status) + 1), '\r', end=' ')
-                break
-
-            done += len(buffer)
-            fd.write(buffer)
-            status = r'%10d MiB  [%3d%%]' % (done // 1024 // 1024,
-                                             done * 100 // size)
-            status = status + chr(8) * (len(status) + 1)
-            print(status, end=' ')
-            sys.stdout.flush()
-        fd.close()
-        if done != size:
-            print('Error, failed to download')
-            os.remove(fname)
-            fname = None
-        return tmpdir, fname
 
     def Unpack(self, fname, dest):
         """Unpack a tar file
@@ -569,7 +526,7 @@ class Toolchains:
             Directory name of the first entry in the archive, without the
             trailing /
         """
-        stdout = command.Output('tar', 'xvfJ', fname, '-C', dest)
+        stdout = command.output('tar', 'xvfJ', fname, '-C', dest)
         dirs = stdout.splitlines()[1].split('/')[:2]
         return '/'.join(dirs)
 
@@ -603,7 +560,7 @@ class Toolchains:
         """
         # Fist get the URL for this architecture
         col = terminal.Color()
-        print(col.Color(col.BLUE, "Downloading toolchain for arch '%s'" % arch))
+        print(col.build(col.BLUE, "Downloading toolchain for arch '%s'" % arch))
         url = self.LocateArchUrl(arch)
         if not url:
             print(("Cannot find toolchain for arch '%s' - use 'list' to list" %
@@ -615,10 +572,10 @@ class Toolchains:
             os.mkdir(dest)
 
         # Download the tar file for this toolchain and unpack it
-        tmpdir, tarfile = self.Download(url)
+        tarfile, tmpdir = tools.download(url, '.buildman')
         if not tarfile:
             return 1
-        print(col.Color(col.GREEN, 'Unpacking to: %s' % dest), end=' ')
+        print(col.build(col.GREEN, 'Unpacking to: %s' % dest), end=' ')
         sys.stdout.flush()
         path = self.Unpack(tarfile, dest)
         os.remove(tarfile)
@@ -626,14 +583,14 @@ class Toolchains:
         print()
 
         # Check that the toolchain works
-        print(col.Color(col.GREEN, 'Testing'))
+        print(col.build(col.GREEN, 'Testing'))
         dirpath = os.path.join(dest, path)
         compiler_fname_list = self.ScanPath(dirpath, True)
         if not compiler_fname_list:
             print('Could not locate C compiler - fetch failed.')
             return 1
         if len(compiler_fname_list) != 1:
-            print(col.Color(col.RED, 'Warning, ambiguous toolchains: %s' %
+            print(col.build(col.RED, 'Warning, ambiguous toolchains: %s' %
                             ', '.join(compiler_fname_list)))
         toolchain = Toolchain(compiler_fname_list[0], True, True)
 
@@ -641,5 +598,5 @@ class Toolchains:
         if not self.TestSettingsHasPath(dirpath):
             print(("Adding 'download' to config file '%s'" %
                    bsettings.config_fname))
-            bsettings.SetItem('toolchain', 'download', '%s/*/*' % dest)
+            bsettings.set_item('toolchain', 'download', '%s/*/*' % dest)
         return 0

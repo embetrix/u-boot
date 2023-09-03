@@ -27,7 +27,7 @@ static int dm_test_cpu(struct unit_test_state *uts)
 	     uclass_find_next_device(&dev))
 		ut_assert(dev_get_flags(dev) & DM_FLAG_ACTIVATED);
 
-	ut_assertok(uclass_get_device_by_name(UCLASS_CPU, "cpu-test1", &dev));
+	ut_assertok(uclass_get_device_by_name(UCLASS_CPU, "cpu@1", &dev));
 	ut_asserteq_ptr(cpu_get_current_dev(), dev);
 	ut_asserteq(cpu_is_current(dev), 1);
 
@@ -37,7 +37,7 @@ static int dm_test_cpu(struct unit_test_state *uts)
 	ut_assertok(cpu_get_info(dev, &info));
 	ut_asserteq(info.cpu_freq, 42 * 42 * 42 * 42 * 42);
 	ut_asserteq(info.features, 0x42424242);
-	ut_asserteq(info.address_width, 32);
+	ut_asserteq(info.address_width, IS_ENABLED(CONFIG_PHYS_64BIT) ? 64 : 32);
 
 	ut_asserteq(cpu_get_count(dev), 42);
 

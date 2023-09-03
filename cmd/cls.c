@@ -8,27 +8,33 @@
 #include <common.h>
 #include <command.h>
 #include <dm.h>
-#include <lcd.h>
-#include <video.h>
+#include <video_console.h>
+
+#define CSI "\x1b["
 
 static int do_video_clear(struct cmd_tbl *cmdtp, int flag, int argc,
 			  char *const argv[])
 {
-#if defined(CONFIG_DM_VIDEO)
-	struct udevice *dev;
+	__maybe_unused struct udevice *dev;
 
-	if (uclass_first_device_err(UCLASS_VIDEO, &dev))
-		return CMD_RET_FAILURE;
+	/*
+	 * Send clear screen and home
+	 *
+	 * FIXME(Heinrich Schuchardt <xypron.glpk@gmx.de>): This should go
+	 * through an API and only be written to serial terminals, not video
+	 * displays
+	 */
+	printf(CSI "2J" CSI "1;1H");
+	if (IS_ENABLED(CONFIG_VIDEO_ANSI))
+		return 0;
 
-	if (video_clear(dev))
-		return CMD_RET_FAILURE;
-#elif defined(CONFIG_CFB_CONSOLE)
-	video_clear();
-#elif defined(CONFIG_LCD)
-	lcd_clear();
-#else
-	return CMD_RET_FAILURE;
-#endif
+	if (IS_ENABLED(CONFIG_VIDEO)) {
+		if (uclass_first_device_err(UCLASS_VIDEO_CONSOLE, &dev))
+			return CMD_RET_FAILURE;
+		if (vidconsole_clear_and_reset(dev))
+			return CMD_RET_FAILURE;
+	}
+
 	return CMD_RET_SUCCESS;
 }
 

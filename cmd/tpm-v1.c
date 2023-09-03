@@ -131,7 +131,8 @@ static int do_tpm_extend(struct cmd_tbl *cmdtp, int flag, int argc,
 		return CMD_RET_FAILURE;
 	}
 
-	rc = tpm_pcr_extend(dev, index, in_digest, out_digest);
+	rc = tpm_pcr_extend(dev, index, in_digest, sizeof(in_digest),
+			    out_digest, "cmd");
 	if (!rc) {
 		puts("PCR value after execution of the command:\n");
 		print_byte_string(out_digest, sizeof(out_digest));
@@ -406,9 +407,9 @@ static int do_tpm_load_key_by_sha1(struct cmd_tbl *cmdtp, int flag, int argc,
 	void *key;
 	struct udevice *dev;
 
-	rc = get_tpm(&dev);
-	if (rc)
-		return rc;
+	err = get_tpm(&dev);
+	if (err)
+		return err;
 
 	if (argc < 5)
 		return CMD_RET_USAGE;
@@ -420,7 +421,7 @@ static int do_tpm_load_key_by_sha1(struct cmd_tbl *cmdtp, int flag, int argc,
 		return CMD_RET_FAILURE;
 	parse_byte_string(argv[4], usage_auth, NULL);
 
-	err = tpm_find_key_sha1(usage_auth, parent_hash, &parent_handle);
+	err = tpm1_find_key_sha1(dev, usage_auth, parent_hash, &parent_handle);
 	if (err) {
 		printf("Could not find matching parent key (err = %d)\n", err);
 		return CMD_RET_FAILURE;
@@ -428,7 +429,7 @@ static int do_tpm_load_key_by_sha1(struct cmd_tbl *cmdtp, int flag, int argc,
 
 	printf("Found parent key %08x\n", parent_handle);
 
-	err = tpm_load_key2_oiap(parent_handle, key, key_len, usage_auth,
+	err = tpm1_load_key2_oiap(dev, parent_handle, key, key_len, usage_auth,
 				 &key_handle);
 	if (!err) {
 		printf("Key handle is 0x%x\n", key_handle);
@@ -582,12 +583,17 @@ static int do_tpm_flush(struct cmd_tbl *cmdtp, int flag, int argc,
 static int do_tpm_list(struct cmd_tbl *cmdtp, int flag, int argc,
 		       char *const argv[])
 {
+	struct udevice *dev;
 	int type = 0;
 	u16 res_count;
 	u8 buf[288];
 	u8 *ptr;
 	int err;
 	uint i;
+
+	err = get_tpm(&dev);
+	if (err)
+		return err;
 
 	if (argc != 2)
 		return CMD_RET_USAGE;
@@ -619,7 +625,7 @@ static int do_tpm_list(struct cmd_tbl *cmdtp, int flag, int argc,
 	}
 
 	/* fetch list of already loaded resources in the TPM */
-	err = tpm_get_capability(TPM_CAP_HANDLE, type, buf,
+	err = tpm_get_capability(dev, TPM_CAP_HANDLE, type, buf,
 				 sizeof(buf));
 	if (err) {
 		printf("tpm_get_capability returned error %d.\n", err);
@@ -649,6 +655,7 @@ TPM_COMMAND_NO_ARG(tpm_physical_disable)
 static struct cmd_tbl tpm1_commands[] = {
 	U_BOOT_CMD_MKENT(device, 0, 1, do_tpm_device, "", ""),
 	U_BOOT_CMD_MKENT(info, 0, 1, do_tpm_info, "", ""),
+	U_BOOT_CMD_MKENT(init, 0, 1, do_tpm_autostart, "", ""),
 	U_BOOT_CMD_MKENT(init, 0, 1, do_tpm_init, "", ""),
 	U_BOOT_CMD_MKENT(startup, 0, 1,
 			 do_tpm_startup, "", ""),
@@ -727,9 +734,12 @@ U_BOOT_CMD(tpm, CONFIG_SYS_MAXARGS, 1, do_tpm,
 "  device [num device]\n"
 "    - Show all devices or set the specified device\n"
 "  info - Show information about the TPM\n"
+"  autostart\n"
+"    - Initalize the tpm, perform a Startup(clear) and run a full selftest\n"
+"      sequence\n"
 "  init\n"
 "    - Put TPM into a state where it waits for 'startup' command.\n"
-"  startup mode\n"
+"      startup mode\n"
 "    - Issue TPM_Starup command.  <mode> is one of TPM_ST_CLEAR,\n"
 "      TPM_ST_STATE, and TPM_ST_DEACTIVATED.\n"
 "Admin Testing Commands:\n"

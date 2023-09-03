@@ -105,6 +105,7 @@
 
 		l2: l2-cache0 {
 			compatible = "cache";
+			cache-level = <2>;
 		};
 	};
 };
@@ -134,4 +135,12 @@
 					 <&cpu103 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
 		};
 	};
+};
+
+&mali {
+	dma-coherent;
+};
+
+&pmu {
+	compatible = "amlogic,g12b-ddr-pmu";
 };

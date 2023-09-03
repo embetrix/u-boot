@@ -24,6 +24,7 @@
 #include <u-boot/sha256.h>
 #include <bootcount.h>
 #include <crypt.h>
+#include <dm/ofnode.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -39,11 +40,15 @@ DECLARE_GLOBAL_DATA_PTR;
 static int stored_bootdelay;
 static int menukey;
 
-#if !defined(CONFIG_AUTOBOOT_STOP_STR_CRYPT)
-#define CONFIG_AUTOBOOT_STOP_STR_CRYPT ""
+#if defined(CONFIG_AUTOBOOT_STOP_STR_CRYPT)
+#define AUTOBOOT_STOP_STR_CRYPT	CONFIG_AUTOBOOT_STOP_STR_CRYPT
+#else
+#define AUTOBOOT_STOP_STR_CRYPT	""
 #endif
-#if !defined(CONFIG_AUTOBOOT_STOP_STR_SHA256)
-#define CONFIG_AUTOBOOT_STOP_STR_SHA256 ""
+#if defined(CONFIG_AUTOBOOT_STOP_STR_SHA256)
+#define AUTOBOOT_STOP_STR_SHA256	CONFIG_AUTOBOOT_STOP_STR_SHA256
+#else
+#define AUTOBOOT_STOP_STR_SHA256	""
 #endif
 
 #ifdef CONFIG_AUTOBOOT_USE_MENUKEY
@@ -68,7 +73,7 @@ static int menukey;
  * before starting to enter the password.
  *
  * @etime: Timeout value ticks (stop when get_ticks() reachs this)
- * @return 0 if autoboot should continue, 1 if it should stop
+ * Return: 0 if autoboot should continue, 1 if it should stop
  */
 static int passwd_abort_crypt(uint64_t etime)
 {
@@ -80,7 +85,7 @@ static int passwd_abort_crypt(uint64_t etime)
 	int err;
 
 	if (IS_ENABLED(CONFIG_AUTOBOOT_STOP_STR_ENABLE) && !crypt_env_str)
-		crypt_env_str = CONFIG_AUTOBOOT_STOP_STR_CRYPT;
+		crypt_env_str = AUTOBOOT_STOP_STR_CRYPT;
 
 	if (!crypt_env_str)
 		return 0;
@@ -114,6 +119,7 @@ static int passwd_abort_crypt(uint64_t etime)
 				presskey_len++;
 			}
 		}
+		udelay(10000);
 	} while (never_timeout || get_ticks() <= etime);
 
 	return abort;
@@ -142,7 +148,7 @@ static int slow_equals(u8 *a, u8 *b, int len)
  * This checks for the user entering a SHA256 hash within a given time.
  *
  * @etime: Timeout value ticks (stop when get_ticks() reachs this)
- * @return 0 if autoboot should continue, 1 if it should stop
+ * Return: 0 if autoboot should continue, 1 if it should stop
  */
 static int passwd_abort_sha256(uint64_t etime)
 {
@@ -158,7 +164,7 @@ static int passwd_abort_sha256(uint64_t etime)
 	int ret;
 
 	if (sha_env_str == NULL)
-		sha_env_str = CONFIG_AUTOBOOT_STOP_STR_SHA256;
+		sha_env_str = AUTOBOOT_STOP_STR_SHA256;
 
 	presskey = malloc_cache_aligned(DELAY_STOP_STR_MAX_LENGTH);
 	c = strstr(sha_env_str, ":");
@@ -205,6 +211,7 @@ static int passwd_abort_sha256(uint64_t etime)
 			if (slow_equals(sha, sha_env, SHA256_SUM_LEN))
 				abort = 1;
 		}
+		udelay(10000);
 	} while (!abort && get_ticks() <= etime);
 
 	free(presskey);
@@ -218,7 +225,7 @@ static int passwd_abort_sha256(uint64_t etime)
  * This checks for the user entering a string within a given time.
  *
  * @etime: Timeout value ticks (stop when get_ticks() reachs this)
- * @return 0 if autoboot should continue, 1 if it should stop
+ * Return: 0 if autoboot should continue, 1 if it should stop
  */
 static int passwd_abort_key(uint64_t etime)
 {
@@ -292,6 +299,7 @@ static int passwd_abort_key(uint64_t etime)
 				abort = 1;
 			}
 		}
+		udelay(10000);
 	} while (!abort && get_ticks() <= etime);
 
 	return abort;
@@ -314,7 +322,7 @@ static void flush_stdin(void)
  * sha256-fallback has been enabled via the config setting
  * `AUTOBOOT_SHA256_FALLBACK`.
  *
- * @return `false` if we must not fall-back, `true` if plain sha256 should be tried
+ * Return: `false` if we must not fall-back, `true` if plain sha256 should be tried
  */
 static bool fallback_to_sha256(void)
 {
@@ -418,21 +426,21 @@ static int abortboot(int bootdelay)
 	return abort;
 }
 
-static void process_fdt_options(const void *blob)
+static void process_fdt_options(void)
 {
-#ifdef CONFIG_SYS_TEXT_BASE
+#ifdef CONFIG_TEXT_BASE
 	ulong addr;
 
 	/* Add an env variable to point to a kernel payload, if available */
-	addr = fdtdec_get_config_int(gd->fdt_blob, "kernel-offset", 0);
+	addr = ofnode_conf_read_int("kernel-offset", 0);
 	if (addr)
-		env_set_addr("kernaddr", (void *)(CONFIG_SYS_TEXT_BASE + addr));
+		env_set_addr("kernaddr", (void *)(CONFIG_TEXT_BASE + addr));
 
 	/* Add an env variable to point to a root disk, if available */
-	addr = fdtdec_get_config_int(gd->fdt_blob, "rootdisk-offset", 0);
+	addr = ofnode_conf_read_int("rootdisk-offset", 0);
 	if (addr)
-		env_set_addr("rootaddr", (void *)(CONFIG_SYS_TEXT_BASE + addr));
-#endif /* CONFIG_SYS_TEXT_BASE */
+		env_set_addr("rootaddr", (void *)(CONFIG_TEXT_BASE + addr));
+#endif /* CONFIG_TEXT_BASE */
 }
 
 const char *bootdelay_process(void)
@@ -445,9 +453,13 @@ const char *bootdelay_process(void)
 	s = env_get("bootdelay");
 	bootdelay = s ? (int)simple_strtol(s, NULL, 10) : CONFIG_BOOTDELAY;
 
+	/*
+	 * Does it really make sense that the devicetree overrides the user
+	 * setting? It is possibly helpful for security since the device tree
+	 * may be signed whereas the environment is often loaded from storage.
+	 */
 	if (IS_ENABLED(CONFIG_OF_CONTROL))
-		bootdelay = fdtdec_get_config_int(gd->fdt_blob, "bootdelay",
-						  bootdelay);
+		bootdelay = ofnode_conf_read_int("bootdelay", bootdelay);
 
 	debug("### main_loop entered: bootdelay=%d\n\n", bootdelay);
 
@@ -466,7 +478,7 @@ const char *bootdelay_process(void)
 		s = env_get("bootcmd");
 
 	if (IS_ENABLED(CONFIG_OF_CONTROL))
-		process_fdt_options(gd->fdt_blob);
+		process_fdt_options();
 	stored_bootdelay = bootdelay;
 
 	return s;

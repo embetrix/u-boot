@@ -27,8 +27,10 @@
 #include <dm/device_compat.h>
 #include <linux/bitops.h>
 #include <linux/delay.h>
+#include <linux/iopoll.h>
 #include <linux/dma-mapping.h>
 #include <sdhci.h>
+#include "../../board/freescale/common/qixis.h"
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -361,13 +363,6 @@ static int esdhc_send_cmd_common(struct fsl_esdhc_priv *priv, struct mmc *mmc,
 	while (esdhc_read32(&regs->prsstat) & PRSSTAT_DLA)
 		;
 
-	/* Wait at least 8 SD clock cycles before the next command */
-	/*
-	 * Note: This is way more than 8 cycles, but 1ms seems to
-	 * resolve timing issues with some cards
-	 */
-	udelay(1000);
-
 	/* Set up for a data transfer if we have one */
 	if (data) {
 		err = esdhc_setup_data(priv, mmc, data);
@@ -509,6 +504,7 @@ static void set_sysctl(struct fsl_esdhc_priv *priv, struct mmc *mmc, uint clock)
 	u32 time_out;
 	u32 value;
 	uint clk;
+	u32 hostver;
 
 	if (clock < mmc->cfg->f_min)
 		clock = mmc->cfg->f_min;
@@ -549,6 +545,14 @@ static void set_sysctl(struct fsl_esdhc_priv *priv, struct mmc *mmc, uint clock)
 
 	esdhc_clrsetbits32(&regs->sysctl, SYSCTL_CLOCK_MASK, clk);
 
+	/* Only newer eSDHC controllers set PRSSTAT_SDSTB flag */
+	hostver = esdhc_read32(&priv->esdhc_regs->hostver);
+	if (HOSTVER_VENDOR(hostver) <= VENDOR_V_22) {
+		udelay(10000);
+		esdhc_setbits32(&regs->sysctl, SYSCTL_PEREN | SYSCTL_CKEN);
+		return;
+	}
+
 	time_out = 20;
 	value = PRSSTAT_SDSTB;
 	while (!(esdhc_read32(&regs->prsstat) & value)) {
@@ -568,6 +572,7 @@ static void esdhc_clock_control(struct fsl_esdhc_priv *priv, bool enable)
 	struct fsl_esdhc *regs = priv->esdhc_regs;
 	u32 value;
 	u32 time_out;
+	u32 hostver;
 
 	value = esdhc_read32(&regs->sysctl);
 
@@ -577,6 +582,13 @@ static void esdhc_clock_control(struct fsl_esdhc_priv *priv, bool enable)
 		value &= ~SYSCTL_CKEN;
 
 	esdhc_write32(&regs->sysctl, value);
+
+	/* Only newer eSDHC controllers set PRSSTAT_SDSTB flag */
+	hostver = esdhc_read32(&priv->esdhc_regs->hostver);
+	if (HOSTVER_VENDOR(hostver) <= VENDOR_V_22) {
+		udelay(10000);
+		return;
+	}
 
 	time_out = 20;
 	value = PRSSTAT_SDSTB;
@@ -730,7 +742,7 @@ static void esdhc_enable_cache_snooping(struct fsl_esdhc *regs)
 
 	setbits_be32(&sysconf->sdhccr, 0x02000000);
 #else
-	esdhc_write32(&regs->esdhcctl, 0x00000040);
+	esdhc_write32(&regs->esdhcctl, ESDHCCTL_SNOOP);
 #endif
 }
 
@@ -779,7 +791,7 @@ static int esdhc_getcd_common(struct fsl_esdhc_priv *priv)
 	struct fsl_esdhc *regs = priv->esdhc_regs;
 
 #ifdef CONFIG_ESDHC_DETECT_QUIRK
-	if (CONFIG_ESDHC_DETECT_QUIRK)
+	if (qixis_esdhc_detect_quirk())
 		return 1;
 #endif
 	if (esdhc_read32(&regs->prsstat) & PRSSTAT_CINS)
@@ -952,9 +964,8 @@ int fsl_esdhc_initialize(struct bd_info *bis, struct fsl_esdhc_cfg *cfg)
 	} else if (cfg->max_bus_width == 1) {
 		mmc_cfg->host_caps |= MMC_MODE_1BIT;
 	} else {
-		mmc_cfg->host_caps |= MMC_MODE_1BIT | MMC_MODE_4BIT |
-				      MMC_MODE_8BIT;
-		printf("No max bus width provided. Assume 8-bit supported.\n");
+		mmc_cfg->host_caps |= MMC_MODE_1BIT;
+		printf("No max bus width provided. Fallback to 1-bit mode.\n");
 	}
 
 	if (IS_ENABLED(CONFIG_ESDHC_DETECT_8_BIT_QUIRK))
@@ -977,7 +988,8 @@ int fsl_esdhc_mmc_init(struct bd_info *bis)
 	struct fsl_esdhc_cfg *cfg;
 
 	cfg = calloc(sizeof(struct fsl_esdhc_cfg), 1);
-	cfg->esdhc_base = CONFIG_SYS_FSL_ESDHC_ADDR;
+	cfg->esdhc_base = CFG_SYS_FSL_ESDHC_ADDR;
+	cfg->max_bus_width = CONFIG_SYS_FSL_ESDHC_DEFAULT_BUS_WIDTH;
 	/* Prefer peripheral clock which provides higher frequency. */
 	if (gd->arch.sdhc_per_clk)
 		cfg->sdhc_clk = gd->arch.sdhc_per_clk;
@@ -1145,6 +1157,20 @@ int fsl_esdhc_hs400_prepare_ddr(struct udevice *dev)
 	return 0;
 }
 
+static int fsl_esdhc_wait_dat0(struct udevice *dev, int state,
+			       int timeout_us)
+{
+	int ret;
+	u32 tmp;
+	struct fsl_esdhc_priv *priv = dev_get_priv(dev);
+	struct fsl_esdhc *regs = priv->esdhc_regs;
+
+	ret = readx_poll_timeout(esdhc_read32, &regs->prsstat, tmp,
+				 !!(tmp & PRSSTAT_DAT0) == !!state,
+				 timeout_us);
+	return ret;
+}
+
 static const struct dm_mmc_ops fsl_esdhc_ops = {
 	.get_cd		= fsl_esdhc_get_cd,
 	.send_cmd	= fsl_esdhc_send_cmd,
@@ -1154,6 +1180,7 @@ static const struct dm_mmc_ops fsl_esdhc_ops = {
 #endif
 	.reinit = fsl_esdhc_reinit,
 	.hs400_prepare_ddr = fsl_esdhc_hs400_prepare_ddr,
+	.wait_dat0 = fsl_esdhc_wait_dat0,
 };
 
 static const struct udevice_id fsl_esdhc_ids[] = {

@@ -23,7 +23,7 @@
 DECLARE_GLOBAL_DATA_PTR;
 
 /* MX35 and older is CSPI */
-#if defined(CONFIG_MX25) || defined(CONFIG_MX31) || defined(CONFIG_MX35)
+#if defined(CONFIG_MX31)
 #define MXC_CSPI
 struct cspi_regs {
 	u32 rxdata;
@@ -48,17 +48,10 @@ struct cspi_regs {
 #define MXC_CSPICTRL_RXOVF		BIT(6)
 #define MXC_CSPIPERIOD_32KHZ		BIT(15)
 #define MAX_SPI_BYTES			4
-#if defined(CONFIG_MX25) || defined(CONFIG_MX35)
-#define MXC_CSPICTRL_CHIPSELECT(x)	(((x) & 0x3) << 12)
-#define MXC_CSPICTRL_BITCOUNT(x)	(((x) & 0xfff) << 20)
-#define MXC_CSPICTRL_TC			BIT(7)
-#define MXC_CSPICTRL_MAXBITS		0xfff
-#else	/* MX31 */
 #define MXC_CSPICTRL_CHIPSELECT(x)	(((x) & 0x3) << 24)
 #define MXC_CSPICTRL_BITCOUNT(x)	(((x) & 0x1f) << 8)
 #define MXC_CSPICTRL_TC			BIT(8)
 #define MXC_CSPICTRL_MAXBITS		0x1f
-#endif
 
 #else	/* MX51 and newer is ECSPI */
 #define MXC_ECSPI
@@ -98,14 +91,6 @@ struct cspi_regs {
 #define MXC_CSPICON_CTL		20 /* inactive state of SCLK */
 #endif
 
-#ifdef CONFIG_MX27
-/* i.MX27 has a completely wrong register layout and register definitions in the
- * datasheet, the correct one is in the Freescale's Linux driver */
-
-#error "i.MX27 CSPI not supported due to drastic differences in register definitions" \
-"See linux mxc_spi driver from Freescale for details."
-#endif
-
 __weak int board_spi_cs_gpio(unsigned bus, unsigned cs)
 {
 	return -1;
@@ -116,8 +101,8 @@ __weak int board_spi_cs_gpio(unsigned bus, unsigned cs)
 #define reg_read readl
 #define reg_write(a, v) writel(v, a)
 
-#if !defined(CONFIG_SYS_SPI_MXC_WAIT)
-#define CONFIG_SYS_SPI_MXC_WAIT		(CONFIG_SYS_HZ/100)	/* 10 ms */
+#if !defined(CFG_SYS_SPI_MXC_WAIT)
+#define CFG_SYS_SPI_MXC_WAIT		(CONFIG_SYS_HZ/100)	/* 10 ms */
 #endif
 
 #define MAX_CS_COUNT	4
@@ -211,9 +196,6 @@ static s32 spi_cfg_mxc(struct mxc_spi_slave *mxcs, unsigned int cs)
 		MXC_CSPICTRL_BITCOUNT(MXC_CSPICTRL_MAXBITS) |
 		MXC_CSPICTRL_DATARATE(div) |
 		MXC_CSPICTRL_EN |
-#ifdef CONFIG_MX35
-		MXC_CSPICTRL_SSCTL |
-#endif
 		MXC_CSPICTRL_MODE;
 
 	if (mode & SPI_CPHA)
@@ -389,7 +371,7 @@ int spi_xchg_single(struct mxc_spi_slave *mxcs, unsigned int bitlen,
 	status = reg_read(&regs->stat);
 	/* Wait until the TC (Transfer completed) bit is set */
 	while ((status & MXC_CSPICTRL_TC) == 0) {
-		if (get_timer(ts) > CONFIG_SYS_SPI_MXC_WAIT) {
+		if (get_timer(ts) > CFG_SYS_SPI_MXC_WAIT) {
 			printf("spi_xchg_single: Timeout!\n");
 			return -1;
 		}
@@ -400,8 +382,6 @@ int spi_xchg_single(struct mxc_spi_slave *mxcs, unsigned int bitlen,
 	reg_write(&regs->stat, MXC_CSPICTRL_TC | MXC_CSPICTRL_RXOVF);
 
 	nbytes = DIV_ROUND_UP(bitlen, 8);
-
-	cnt = nbytes % 32;
 
 	if (bitlen % 32) {
 		data = reg_read(&regs->rxdata);

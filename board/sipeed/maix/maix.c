@@ -11,7 +11,7 @@
 
 phys_size_t get_effective_memsize(void)
 {
-	return CONFIG_SYS_SDRAM_SIZE;
+	return CFG_SYS_SDRAM_SIZE;
 }
 
 static int sram_init(void)
@@ -22,7 +22,7 @@ static int sram_init(void)
 	struct clk clk;
 
 	/* Enable RAM clocks */
-	memory = ofnode_by_compatible(ofnode_null(), "kendryte,k210-sram");
+	memory = ofnode_by_compatible(ofnode_null(), "canaan,k210-sram");
 	if (ofnode_equal(memory, ofnode_null()))
 		return -ENOENT;
 

@@ -10,40 +10,40 @@ choice
 config TARGET_J721E_A72_EVM
 	bool "TI K3 based J721E EVM running on A72"
 	select ARM64
-	select SOC_K3_J721E
 	select BOARD_LATE_INIT
 	imply TI_I2C_BOARD_DETECT
 	select SYS_DISABLE_DCACHE_OPS
+	select BINMAN
 
 config TARGET_J721E_R5_EVM
 	bool "TI K3 based J721E EVM running on R5"
 	select CPU_V7R
 	select SYS_THUMB_BUILD
-	select SOC_K3_J721E
 	select K3_LOAD_SYSFW
 	select RAM
 	select SPL_RAM
 	select K3_DDRSS
+	select BINMAN
 	imply SYS_K3_SPL_ATF
 	imply TI_I2C_BOARD_DETECT
 
 config TARGET_J7200_A72_EVM
 	bool "TI K3 based J7200 EVM running on A72"
 	select ARM64
-	select SOC_K3_J721E
 	select BOARD_LATE_INIT
 	imply TI_I2C_BOARD_DETECT
 	select SYS_DISABLE_DCACHE_OPS
+	select BINMAN
 
 config TARGET_J7200_R5_EVM
 	bool "TI K3 based J7200 EVM running on R5"
 	select CPU_V7R
 	select SYS_THUMB_BUILD
-	select SOC_K3_J721E
 	select K3_LOAD_SYSFW
 	select RAM
 	select SPL_RAM
 	select K3_DDRSS
+	select BINMAN
 	imply SYS_K3_SPL_ATF
 	imply TI_I2C_BOARD_DETECT
 
@@ -60,6 +60,9 @@ config SYS_VENDOR
 config SYS_CONFIG_NAME
        default "j721e_evm"
 
+config ENV_SOURCE_FILE
+       default "j721e"
+
 source "board/ti/common/Kconfig"
 
 endif
@@ -75,8 +78,8 @@ config SYS_VENDOR
 config SYS_CONFIG_NAME
        default "j721e_evm"
 
-config SPL_LDSCRIPT
-	default "arch/arm/mach-omap2/u-boot-spl.lds"
+config ENV_SOURCE_FILE
+       default "j721e"
 
 source "board/ti/common/Kconfig"
 
@@ -93,6 +96,9 @@ config SYS_VENDOR
 config SYS_CONFIG_NAME
        default "j721e_evm"
 
+config ENV_SOURCE_FILE
+       default "j721e"
+
 source "board/ti/common/Kconfig"
 
 endif
@@ -108,8 +114,8 @@ config SYS_VENDOR
 config SYS_CONFIG_NAME
        default "j721e_evm"
 
-config SPL_LDSCRIPT
-	default "arch/arm/mach-omap2/u-boot-spl.lds"
+config ENV_SOURCE_FILE
+       default "j721e"
 
 source "board/ti/common/Kconfig"
 

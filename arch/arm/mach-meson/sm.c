@@ -6,8 +6,6 @@
  */
 
 #include <common.h>
-#include <command.h>
-#include <env.h>
 #include <log.h>
 #include <asm/arch/sm.h>
 #include <asm/cache.h>
@@ -26,6 +24,7 @@
 #define FN_EFUSE_READ			0x82000030
 #define FN_EFUSE_WRITE			0x82000031
 #define FN_CHIP_ID			0x82000044
+#define FN_PWRDM_SET			0x82000093
 
 static void *shmem_input;
 static void *shmem_output;
@@ -64,6 +63,23 @@ ssize_t meson_sm_read_efuse(uintptr_t offset, void *buffer, size_t size)
 		return -1;
 
 	memcpy(buffer, shmem_output, min(size, regs.regs[0]));
+
+	return regs.regs[0];
+}
+
+ssize_t meson_sm_write_efuse(uintptr_t offset, void *buffer, size_t size)
+{
+	struct pt_regs regs;
+
+	meson_init_shmem();
+
+        memcpy(shmem_input, buffer, size);
+
+	regs.regs[0] = FN_EFUSE_WRITE;
+	regs.regs[1] = offset;
+	regs.regs[2] = size;
+
+	smc_call(&regs);
 
 	return regs.regs[0];
 }
@@ -123,98 +139,15 @@ int meson_sm_get_reboot_reason(void)
 	return FIELD_GET(REBOOT_REASON_MASK, reason);
 }
 
-static int do_sm_serial(struct cmd_tbl *cmdtp, int flag, int argc,
-			char *const argv[])
+int meson_sm_pwrdm_set(size_t index, int cmd)
 {
-	ulong address;
-	int ret;
+	struct pt_regs regs;
 
-	if (argc < 2)
-		return CMD_RET_USAGE;
+	regs.regs[0] = FN_PWRDM_SET;
+	regs.regs[1] = index;
+	regs.regs[2] = cmd;
 
-	address = simple_strtoul(argv[1], NULL, 0);
+	smc_call(&regs);
 
-	ret = meson_sm_get_serial((void *)address, SM_CHIP_ID_SIZE);
-	if (ret)
-		return CMD_RET_FAILURE;
-
-	return CMD_RET_SUCCESS;
+	return regs.regs[0];
 }
-
-#define MAX_REBOOT_REASONS 14
-
-static const char *reboot_reasons[MAX_REBOOT_REASONS] = {
-	[REBOOT_REASON_COLD] = "cold_boot",
-	[REBOOT_REASON_NORMAL] = "normal",
-	[REBOOT_REASON_RECOVERY] = "recovery",
-	[REBOOT_REASON_UPDATE] = "update",
-	[REBOOT_REASON_FASTBOOT] = "fastboot",
-	[REBOOT_REASON_SUSPEND_OFF] = "suspend_off",
-	[REBOOT_REASON_HIBERNATE] = "hibernate",
-	[REBOOT_REASON_BOOTLOADER] = "bootloader",
-	[REBOOT_REASON_SHUTDOWN_REBOOT] = "shutdown_reboot",
-	[REBOOT_REASON_RPMBP] = "rpmbp",
-	[REBOOT_REASON_CRASH_DUMP] = "crash_dump",
-	[REBOOT_REASON_KERNEL_PANIC] = "kernel_panic",
-	[REBOOT_REASON_WATCHDOG_REBOOT] = "watchdog_reboot",
-};
-
-static int do_sm_reboot_reason(struct cmd_tbl *cmdtp, int flag, int argc,
-			       char *const argv[])
-{
-	const char *reason_str;
-	char *destarg = NULL;
-	int reason;
-
-	if (argc > 1)
-		destarg = argv[1];
-
-	reason = meson_sm_get_reboot_reason();
-	if (reason < 0)
-		return CMD_RET_FAILURE;
-
-	if (reason >= MAX_REBOOT_REASONS ||
-	    !reboot_reasons[reason])
-		reason_str = "unknown";
-	else
-		reason_str = reboot_reasons[reason];
-
-	if (destarg)
-		env_set(destarg, reason_str);
-	else
-		printf("reboot reason: %s (%x)\n", reason_str, reason);
-
-	return CMD_RET_SUCCESS;
-}
-
-static struct cmd_tbl cmd_sm_sub[] = {
-	U_BOOT_CMD_MKENT(serial, 2, 1, do_sm_serial, "", ""),
-	U_BOOT_CMD_MKENT(reboot_reason, 1, 1, do_sm_reboot_reason, "", ""),
-};
-
-static int do_sm(struct cmd_tbl *cmdtp, int flag, int argc,
-		 char *const argv[])
-{
-	struct cmd_tbl *c;
-
-	if (argc < 2)
-		return CMD_RET_USAGE;
-
-	/* Strip off leading 'sm' command argument */
-	argc--;
-	argv++;
-
-	c = find_cmd_tbl(argv[0], &cmd_sm_sub[0], ARRAY_SIZE(cmd_sm_sub));
-
-	if (c)
-		return c->cmd(cmdtp, flag, argc, argv);
-	else
-		return CMD_RET_USAGE;
-}
-
-U_BOOT_CMD(
-	sm, 5, 0, do_sm,
-	"Secure Monitor Control",
-	"serial <address> - read chip unique id to memory address\n"
-	"sm reboot_reason [name] - get reboot reason and store to to environment"
-);

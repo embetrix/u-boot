@@ -10,10 +10,12 @@
 #include <linux/bitops.h>
 #include <linux/sizes.h>
 
+#define SRAM0_BASE          0x22010000
 #define PBRIDGE0_BASE		0x28000000
 
 #define CMC0_RBASE		0x28025000
 
+#define MU0_B_BASE_ADDR		0x29220000
 #define CMC1_BASE_ADDR		0x29240000
 
 #define SIM1_BASE_ADDR		0x29290000
@@ -30,6 +32,7 @@
 
 #define PCC_XRDC_MGR_ADDR	0x292d00bc
 
+#define PCC1_RBASE		0x28091000
 #define PCC3_RBASE		0x292d0000
 #define PCC4_RBASE		0x29800000
 #define PCC5_RBASE		0x2da70000
@@ -59,6 +62,8 @@
 #define AVD_SIM_LPDDR_CTRL2	(AVD_SIM_BASE_ADDR + 0x18)
 
 #define FEC_QUIRK_ENET_MAC
+
+#define IMG_CONTAINER_BASE             (0x22010000UL)
 
 #if !(defined(__KERNEL_STRICT_NAMES) || defined(__ASSEMBLY__))
 #include <asm/types.h>

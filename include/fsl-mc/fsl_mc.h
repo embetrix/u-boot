@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright (C) 2014 Freescale Semiconductor
+ * Copyright 2021 NXP
  */
 
 #ifndef __FSL_MC_H__
@@ -52,12 +53,20 @@ struct mc_ccsr_registers {
 	u32 reg_error[];
 };
 
+struct log_header {
+	u32 magic_word;
+	char reserved[4];
+	u32 buf_start;
+	u32 buf_length;
+	u32 last_byte;
+};
+
 void fdt_fsl_mc_fixup_iommu_map_entry(void *blob);
 int get_mc_boot_status(void);
 int get_dpl_apply_status(void);
 int is_lazy_dpl_addr_valid(void);
 void fdt_fixup_mc_ddr(u64 *base, u64 *size);
-#ifdef CONFIG_SYS_LS_MC_DRAM_AIOP_IMG_OFFSET
+#ifdef CFG_SYS_LS_MC_DRAM_AIOP_IMG_OFFSET
 int get_aiop_apply_status(void);
 #endif
 u64 mc_get_dram_addr(void);

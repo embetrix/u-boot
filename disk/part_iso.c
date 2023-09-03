@@ -12,8 +12,6 @@
 #include <asm/unaligned.h>
 #include "part_iso.h"
 
-#ifdef CONFIG_HAVE_BLOCK_DEVICE
-
 /* #define	ISO_PART_DEBUG */
 
 #ifdef	ISO_PART_DEBUG
@@ -220,7 +218,7 @@ static void part_print_iso(struct blk_desc *dev_desc)
 	printf("Part   Start     Sect x Size Type\n");
 	i=1;
 	do {
-		printf(" %2d " LBAFU " " LBAFU " %6ld %.32s\n",
+		printf(" %2d %8" LBAFlength "u %8" LBAFlength "u %6ld %.32s\n",
 		       i, info.start, info.size, info.blksz, info.type);
 		i++;
 	} while (part_get_info_iso_verb(dev_desc, i, &info, 0) != -1);
@@ -241,4 +239,3 @@ U_BOOT_PART_TYPE(iso) = {
 	.print		= part_print_iso,
 	.test		= part_test_iso,
 };
-#endif

@@ -189,10 +189,10 @@ void board_ft_fman_fixup_port(void *fdt, char *compat, phys_addr_t addr,
 	const char *phyconn;
 	int off;
 
-	ccsr_gur_t *gur = (void *)(CONFIG_SYS_MPC85xx_GUTS_ADDR);
+	ccsr_gur_t *gur = (void *)(CFG_SYS_MPC85xx_GUTS_ADDR);
 #ifdef CONFIG_TARGET_T2080QDS
 	serdes_corenet_t *srds_regs =
-		(void *)CONFIG_SYS_FSL_CORENET_SERDES_ADDR;
+		(void *)CFG_SYS_FSL_CORENET_SERDES_ADDR;
 	u32 srds1_pccr1 = in_be32(&srds_regs->srdspccr1);
 #endif
 	u32 srds_s1 = in_be32(&gur->rcwsr[4]) &
@@ -310,16 +310,16 @@ void board_ft_fman_fixup_port(void *fdt, char *compat, phys_addr_t addr,
 
 	} else if (fm_info_get_enet_if(port) == PHY_INTERFACE_MODE_XGMII) {
 		switch (srds_s1) {
-		case 0x66: /* XFI interface */
+		case 0x66: /* 10GBase-R interface */
 		case 0x6b:
 		case 0x6c:
 		case 0x6d:
 		case 0x71:
 			/*
-			* if the 10G is XFI, check hwconfig to see what is the
-			* media type, there are two types, fiber or copper,
-			* fix the dtb accordingly.
-			*/
+			 * Check hwconfig to see what is the media type, there
+			 * are two types, fiber or copper, fix the dtb
+			 * accordingly.
+			 */
 			switch (port) {
 			case FM1_10GEC1:
 			if (hwconfig_sub("fsl_10gkr_copper", "fm1_10g1")) {
@@ -378,7 +378,7 @@ void board_ft_fman_fixup_port(void *fdt, char *compat, phys_addr_t addr,
 					printf("Interface %d in backplane KR mode\n",
 					       port);
 				} else {
-					/* fixed-link for XFI fiber cable */
+					/* fixed-link for 10GBase-R fiber cable */
 					f_link.phy_id = port;
 					f_link.duplex = 1;
 					f_link.link_speed = 10000;
@@ -413,7 +413,7 @@ void fdt_fixup_board_enet(void *fdt)
  */
 static void initialize_lane_to_slot(void)
 {
-	ccsr_gur_t *gur = (void *)(CONFIG_SYS_MPC85xx_GUTS_ADDR);
+	ccsr_gur_t *gur = (void *)(CFG_SYS_MPC85xx_GUTS_ADDR);
 	u32 srds_s1 = in_be32(&gur->rcwsr[4]) &
 				FSL_CORENET2_RCWSR4_SRDS1_PRTCL;
 
@@ -459,7 +459,7 @@ int board_eth_init(struct bd_info *bis)
 	int i, idx, lane, slot, interface;
 	struct memac_mdio_info dtsec_mdio_info;
 	struct memac_mdio_info tgec_mdio_info;
-	ccsr_gur_t *gur = (void *)(CONFIG_SYS_MPC85xx_GUTS_ADDR);
+	ccsr_gur_t *gur = (void *)(CFG_SYS_MPC85xx_GUTS_ADDR);
 	u32 rcwsr13 = in_be32(&gur->rcwsr[13]);
 	u32 srds_s1;
 
@@ -474,7 +474,7 @@ int board_eth_init(struct bd_info *bis)
 		mdio_mux[i] = EMI_NONE;
 
 	dtsec_mdio_info.regs =
-		(struct memac_mdio_controller *)CONFIG_SYS_FM1_DTSEC_MDIO_ADDR;
+		(struct memac_mdio_controller *)CFG_SYS_FM1_DTSEC_MDIO_ADDR;
 
 	dtsec_mdio_info.name = DEFAULT_FM_MDIO_NAME;
 
@@ -482,7 +482,7 @@ int board_eth_init(struct bd_info *bis)
 	fm_memac_mdio_init(bis, &dtsec_mdio_info);
 
 	tgec_mdio_info.regs =
-		(struct memac_mdio_controller *)CONFIG_SYS_FM1_TGEC_MDIO_ADDR;
+		(struct memac_mdio_controller *)CFG_SYS_FM1_TGEC_MDIO_ADDR;
 	tgec_mdio_info.name = DEFAULT_FM_TGEC_MDIO_NAME;
 
 	/* Register the 10G MDIO bus */
@@ -538,12 +538,12 @@ int board_eth_init(struct bd_info *bis)
 	case 0x66:
 	case 0x67:
 		/*
-		 * XFI does not need a PHY to work, but to avoid U-Boot use
-		 * default PHY address which is zero to a MAC when it found
-		 * a MAC has no PHY address, we give a PHY address to XFI
+		 * 10GBase-R does not need a PHY to work, but to avoid U-Boot
+		 * use default PHY address which is zero to a MAC when it found
+		 * a MAC has no PHY address, we give a PHY address to 10GBase-R
 		 * MAC, and should not use a real XAUI PHY address, since
 		 * MDIO can access it successfully, and then MDIO thinks
-		 * the XAUI card is used for the XFI MAC, which will cause
+		 * the XAUI card is used for the 10GBase-R MAC, which will cause
 		 * error.
 		 */
 		fm_info_set_phy_address(FM1_10GEC1, 4);
@@ -625,7 +625,7 @@ int board_eth_init(struct bd_info *bis)
 		break;
 	}
 
-	for (i = FM1_DTSEC1; i < FM1_DTSEC1 + CONFIG_SYS_NUM_FM1_DTSEC; i++) {
+	for (i = FM1_DTSEC1; i < FM1_DTSEC1 + CFG_SYS_NUM_FM1_DTSEC; i++) {
 		idx = i - FM1_DTSEC1;
 		interface = fm_info_get_enet_if(i);
 		switch (interface) {
@@ -673,7 +673,7 @@ int board_eth_init(struct bd_info *bis)
 		}
 	}
 
-	for (i = FM1_10GEC1; i < FM1_10GEC1 + CONFIG_SYS_NUM_FM1_10GEC; i++) {
+	for (i = FM1_10GEC1; i < FM1_10GEC1 + CFG_SYS_NUM_FM1_10GEC; i++) {
 		idx = i - FM1_10GEC1;
 		switch (fm_info_get_enet_if(i)) {
 		case PHY_INTERFACE_MODE_XGMII:
@@ -701,7 +701,7 @@ int board_eth_init(struct bd_info *bis)
 			    (srds_s1 == 0x6a) || (srds_s1 == 0x70) ||
 			    (srds_s1 == 0x6c) || (srds_s1 == 0x6d) ||
 			    (srds_s1 == 0x71)) {
-				/* As XFI is in cage intead of a slot, so
+				/* As 10GBase-R is in cage intead of a slot, so
 				 * ensure doesn't disable the corresponding port
 				 */
 				break;

@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright 2011 Calxeda, Inc.
+ * Copyright 2022-2023 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ *
+ * Authors:
+ *   Abdellatif El Khlifi <abdellatif.elkhlifi@arm.com>
  */
 
 #include <common.h>
 #include <command.h>
+#include <efi_api.h>
 #include <env.h>
 #include <rand.h>
 #include <time.h>
@@ -86,11 +91,11 @@ int uuid_str_valid(const char *uuid)
 	return 1;
 }
 
-#ifdef CONFIG_PARTITION_TYPE_GUID
 static const struct {
 	const char *string;
 	efi_guid_t guid;
 } list_guid[] = {
+#ifdef CONFIG_PARTITION_TYPE_GUID
 	{"system",	PARTITION_SYSTEM_GUID},
 	{"mbr",		LEGACY_MBR_PARTITION_GUID},
 	{"msft",	PARTITION_MSFT_RESERVED_GUID},
@@ -100,6 +105,168 @@ static const struct {
 	{"swap",	PARTITION_LINUX_SWAP_GUID},
 	{"lvm",		PARTITION_LINUX_LVM_GUID},
 	{"u-boot-env",	PARTITION_U_BOOT_ENVIRONMENT},
+#endif
+#if defined(CONFIG_CMD_EFIDEBUG) || defined(CONFIG_EFI)
+	{
+		"Device Path",
+		EFI_DEVICE_PATH_PROTOCOL_GUID,
+	},
+	{
+		"Device Path To Text",
+		EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID,
+	},
+	{
+		"Device Path Utilities",
+		EFI_DEVICE_PATH_UTILITIES_PROTOCOL_GUID,
+	},
+	{
+		"Unicode Collation 2",
+		EFI_UNICODE_COLLATION_PROTOCOL2_GUID,
+	},
+	{
+		"Driver Binding",
+		EFI_DRIVER_BINDING_PROTOCOL_GUID,
+	},
+	{
+		"Simple Text Input",
+		EFI_SIMPLE_TEXT_INPUT_PROTOCOL_GUID,
+	},
+	{
+		"Simple Text Input Ex",
+		EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL_GUID,
+	},
+	{
+		"Simple Text Output",
+		EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL_GUID,
+	},
+	{
+		"Block IO",
+		EFI_BLOCK_IO_PROTOCOL_GUID,
+	},
+	{
+		"Simple File System",
+		EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID,
+	},
+	{
+		"Loaded Image",
+		EFI_LOADED_IMAGE_PROTOCOL_GUID,
+	},
+	{
+		"Graphics Output",
+		EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID,
+	},
+	{
+		"HII String",
+		EFI_HII_STRING_PROTOCOL_GUID,
+	},
+	{
+		"HII Database",
+		EFI_HII_DATABASE_PROTOCOL_GUID,
+	},
+	{
+		"HII Config Routing",
+		EFI_HII_CONFIG_ROUTING_PROTOCOL_GUID,
+	},
+	{
+		"Load File2",
+		EFI_LOAD_FILE2_PROTOCOL_GUID,
+	},
+	{
+		"Random Number Generator",
+		EFI_RNG_PROTOCOL_GUID,
+	},
+	{
+		"Simple Network",
+		EFI_SIMPLE_NETWORK_PROTOCOL_GUID,
+	},
+	{
+		"PXE Base Code",
+		EFI_PXE_BASE_CODE_PROTOCOL_GUID,
+	},
+	{
+		"Device-Tree Fixup",
+		EFI_DT_FIXUP_PROTOCOL_GUID,
+	},
+	{
+		"TCG2",
+		EFI_TCG2_PROTOCOL_GUID,
+		},
+	{
+		"System Partition",
+		PARTITION_SYSTEM_GUID
+	},
+	{
+		"Firmware Management",
+		EFI_FIRMWARE_MANAGEMENT_PROTOCOL_GUID
+	},
+	/* Configuration table GUIDs */
+	{
+		"ACPI table",
+		EFI_ACPI_TABLE_GUID,
+	},
+	{
+		"EFI System Resource Table",
+		EFI_SYSTEM_RESOURCE_TABLE_GUID,
+	},
+	{
+		"device tree",
+		EFI_FDT_GUID,
+	},
+	{
+		"SMBIOS table",
+		SMBIOS_TABLE_GUID,
+	},
+	{
+		"Runtime properties",
+		EFI_RT_PROPERTIES_TABLE_GUID,
+	},
+	{
+		"TCG2 Final Events Table",
+		EFI_TCG2_FINAL_EVENTS_TABLE_GUID,
+	},
+	{
+		"EFI Conformance Profiles Table",
+		EFI_CONFORMANCE_PROFILES_TABLE_GUID,
+	},
+#ifdef CONFIG_EFI_RISCV_BOOT_PROTOCOL
+	{
+		"RISC-V Boot",
+		RISCV_EFI_BOOT_PROTOCOL_GUID,
+	},
+#endif
+#endif /* CONFIG_CMD_EFIDEBUG */
+#ifdef CONFIG_CMD_NVEDIT_EFI
+	/* signature database */
+	{
+		"EFI_GLOBAL_VARIABLE_GUID",
+		EFI_GLOBAL_VARIABLE_GUID,
+	},
+	{
+		"EFI_IMAGE_SECURITY_DATABASE_GUID",
+		EFI_IMAGE_SECURITY_DATABASE_GUID,
+	},
+	/* certificate types */
+	{
+		"EFI_CERT_SHA256_GUID",
+		EFI_CERT_SHA256_GUID,
+	},
+	{
+		"EFI_CERT_X509_GUID",
+		EFI_CERT_X509_GUID,
+	},
+	{
+		"EFI_CERT_TYPE_PKCS7_GUID",
+		EFI_CERT_TYPE_PKCS7_GUID,
+	},
+#endif
+#if defined(CONFIG_CMD_EFIDEBUG) || defined(CONFIG_EFI)
+	{ "EFI_LZMA_COMPRESSED", EFI_LZMA_COMPRESSED },
+	{ "EFI_DXE_SERVICES", EFI_DXE_SERVICES },
+	{ "EFI_HOB_LIST", EFI_HOB_LIST },
+	{ "EFI_MEMORY_TYPE", EFI_MEMORY_TYPE },
+	{ "EFI_MEM_STATUS_CODE_REC", EFI_MEM_STATUS_CODE_REC },
+	{ "EFI_GUID_EFI_ACPI1", EFI_GUID_EFI_ACPI1 },
+#endif
 };
 
 /*
@@ -139,7 +306,6 @@ const char *uuid_guid_get_str(const unsigned char *guid_bin)
 	}
 	return NULL;
 }
-#endif
 
 /*
  * uuid_str_to_bin() - convert string UUID or GUID to big endian binary data.
@@ -188,6 +354,50 @@ int uuid_str_to_bin(const char *uuid_str, unsigned char *uuid_bin,
 
 	tmp64 = cpu_to_be64(simple_strtoull(uuid_str + 24, NULL, 16));
 	memcpy(uuid_bin + 10, (char *)&tmp64 + 2, 6);
+
+	return 0;
+}
+
+/**
+ * uuid_str_to_le_bin() - Convert string UUID to little endian binary data.
+ * @uuid_str:	pointer to UUID string
+ * @uuid_bin:	pointer to allocated array for little endian output [16B]
+ *
+ * UUID string is 36 characters (36 bytes):
+ *
+ * xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+ *
+ * where x is a hexadecimal character. Fields are separated by '-'s.
+ * When converting to a little endian binary UUID, the string fields are reversed.
+ *
+ * Return:
+ *
+ *    uuid_bin filled with little endian UUID data
+ *    On success 0 is returned. Otherwise, failure code.
+ */
+int uuid_str_to_le_bin(const char *uuid_str, unsigned char *uuid_bin)
+{
+	u16 tmp16;
+	u32 tmp32;
+	u64 tmp64;
+
+	if (!uuid_str_valid(uuid_str) || !uuid_bin)
+		return -EINVAL;
+
+	tmp32 = cpu_to_le32(hextoul(uuid_str, NULL));
+	memcpy(uuid_bin, &tmp32, 4);
+
+	tmp16 = cpu_to_le16(hextoul(uuid_str + 9, NULL));
+	memcpy(uuid_bin + 4, &tmp16, 2);
+
+	tmp16 = cpu_to_le16(hextoul(uuid_str + 14, NULL));
+	memcpy(uuid_bin + 6, &tmp16, 2);
+
+	tmp16 = cpu_to_le16(hextoul(uuid_str + 19, NULL));
+	memcpy(uuid_bin + 8, &tmp16, 2);
+
+	tmp64 = cpu_to_le64(simple_strtoull(uuid_str + 24, NULL, 16));
+	memcpy(uuid_bin + 10, &tmp64, 6);
 
 	return 0;
 }
@@ -257,7 +467,7 @@ void gen_rand_uuid(unsigned char *uuid_bin)
 
 	if (IS_ENABLED(CONFIG_DM_RNG)) {
 		ret = uclass_get_device(UCLASS_RNG, 0, &devp);
-		if (ret) {
+		if (!ret) {
 			ret = dm_rng_read(devp, &randv, sizeof(randv));
 			if (ret < 0)
 				randv = 0;

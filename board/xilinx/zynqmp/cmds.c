@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * (C) Copyright 2018 Xilinx, Inc.
- * Siva Durga Prasad Paladugu <siva.durga.paladugu@xilinx.com>
+ * Siva Durga Prasad Paladugu <siva.durga.prasad.paladugu@amd.com>>
  */
 
 #include <common.h>
@@ -142,9 +142,6 @@ static int do_zynqmp_aes(struct cmd_tbl *cmdtp, int flag, int argc,
 	aes->keysrc = hextoul(argv[6], NULL);
 	aes->dstaddr = hextoul(argv[7], NULL);
 
-	flush_dcache_range((ulong)aes, (ulong)(aes) +
-			   roundup(sizeof(struct aes), ARCH_DMA_MINALIGN));
-
 	if (aes->srcaddr && aes->ivaddr && aes->dstaddr) {
 		flush_dcache_range(aes->srcaddr,
 				   (aes->srcaddr +
@@ -169,6 +166,9 @@ static int do_zynqmp_aes(struct cmd_tbl *cmdtp, int flag, int argc,
 						    ARCH_DMA_MINALIGN)));
 	}
 
+	flush_dcache_range((ulong)aes, (ulong)(aes) +
+			   roundup(sizeof(struct aes), ARCH_DMA_MINALIGN));
+
 	ret = xilinx_pm_request(PM_SECURE_AES, upper_32_bits((ulong)aes),
 				lower_32_bits((ulong)aes), 0, 0, ret_payload);
 	if (ret || ret_payload[1])
@@ -186,6 +186,11 @@ static int do_zynqmp_tcm_init(struct cmd_tbl *cmdtp, int flag, int argc,
 
 	if (argc != cmdtp->maxargs)
 		return CMD_RET_USAGE;
+
+	if (strcmp(argv[2], "lockstep") && strcmp(argv[2], "split")) {
+		printf("mode param should be lockstep or split\n");
+		return CMD_RET_FAILURE;
+	}
 
 	mode = hextoul(argv[2], NULL);
 	if (mode != TCM_LOCK && mode != TCM_SPLIT) {
@@ -209,9 +214,30 @@ static int do_zynqmp_pmufw(struct cmd_tbl *cmdtp, int flag, int argc,
 	if (argc != cmdtp->maxargs)
 		return CMD_RET_USAGE;
 
+	if (!strncmp(argv[2], "node", 4)) {
+		u32 id;
+		int ret;
+
+		if (!strncmp(argv[3], "close", 5))
+			return zynqmp_pmufw_config_close();
+
+		id = dectoul(argv[3], NULL);
+		if (!id) {
+			printf("Incorrect ID passed\n");
+			return CMD_RET_USAGE;
+		}
+
+		printf("Enable permission for node ID %d\n", id);
+
+		ret = zynqmp_pmufw_node(id);
+		if (ret == -ENODEV)
+			ret = 0;
+
+		return ret;
+	}
+
 	addr = hextoul(argv[2], NULL);
 	size = hextoul(argv[3], NULL);
-	flush_dcache_range((ulong)addr, (ulong)(addr + size));
 
 	zynqmp_pmufw_load_config_object((const void *)(uintptr_t)addr,
 					(size_t)size);
@@ -378,17 +404,17 @@ static int do_zynqmp(struct cmd_tbl *cmdtp, int flag, int argc,
 		     char *const argv[])
 {
 	struct cmd_tbl *c;
+	int ret = CMD_RET_USAGE;
 
 	if (argc < 2)
 		return CMD_RET_USAGE;
 
 	c = find_cmd_tbl(argv[1], &cmd_zynqmp_sub[0],
 			 ARRAY_SIZE(cmd_zynqmp_sub));
-
 	if (c)
-		return c->cmd(c, flag, argc, argv);
-	else
-		return CMD_RET_USAGE;
+		ret = c->cmd(c, flag, argc, argv);
+
+	return cmd_process_error(c, ret);
 }
 
 /***************************************************/
@@ -417,6 +443,9 @@ static char zynqmp_help_text[] =
 	"		       lock(0)/split(1)\n"
 #endif
 	"zynqmp pmufw address size - load PMU FW configuration object\n"
+	"zynqmp pmufw node <id> - load PMU FW configuration object, <id> in dec\n"
+	"zynqmp pmufw node close - disable config object loading\n"
+	"	node: keyword, id: NODE_ID in decimal format\n"
 	"zynqmp rsa srcaddr srclen mod exp rsaop -\n"
 	"	Performs RSA encryption and RSA decryption on blob of data\n"
 	"	at srcaddr and puts it back in srcaddr using modulus and\n"

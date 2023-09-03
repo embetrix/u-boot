@@ -52,7 +52,6 @@ static efi_handle_t efi_initrd_handle;
  */
 static efi_status_t get_initrd_fp(struct efi_device_path **initrd_fp)
 {
-	const efi_guid_t lf2_initrd_guid = EFI_INITRD_MEDIA_GUID;
 	struct efi_device_path *dp = NULL;
 
 	/*
@@ -65,7 +64,7 @@ static efi_status_t get_initrd_fp(struct efi_device_path **initrd_fp)
 	 * We can then use this specific return value and not install the
 	 * protocol, while allowing the boot to continue
 	 */
-	dp = efi_get_dp_from_boot(lf2_initrd_guid);
+	dp = efi_get_dp_from_boot(efi_lf2_initrd_guid);
 	if (!dp)
 		return EFI_INVALID_PARAMETER;
 
@@ -209,14 +208,13 @@ efi_status_t efi_initrd_register(void)
 	if (ret != EFI_SUCCESS)
 		return ret;
 
-	ret = EFI_CALL(efi_install_multiple_protocol_interfaces
-		       (&efi_initrd_handle,
-			/* initramfs */
-			&efi_guid_device_path, &dp_lf2_handle,
-			/* LOAD_FILE2 */
-			&efi_guid_load_file2_protocol,
-			(void *)&efi_lf2_protocol,
-			NULL));
+	ret = efi_install_multiple_protocol_interfaces(&efi_initrd_handle,
+						       /* initramfs */
+						       &efi_guid_device_path, &dp_lf2_handle,
+						       /* LOAD_FILE2 */
+						       &efi_guid_load_file2_protocol,
+						       &efi_lf2_protocol,
+						       NULL);
 
 	return ret;
 }
@@ -229,8 +227,22 @@ efi_status_t efi_initrd_register(void)
  *
  * Return:	status code
  */
-void efi_initrd_deregister(void)
+efi_status_t efi_initrd_deregister(void)
 {
-	efi_delete_handle(efi_initrd_handle);
+	efi_status_t ret;
+
+	if (!efi_initrd_handle)
+		return EFI_SUCCESS;
+
+	ret = efi_uninstall_multiple_protocol_interfaces(efi_initrd_handle,
+							 /* initramfs */
+							 &efi_guid_device_path,
+							 &dp_lf2_handle,
+							 /* LOAD_FILE2 */
+							 &efi_guid_load_file2_protocol,
+							 &efi_lf2_protocol,
+							 NULL);
 	efi_initrd_handle = NULL;
+
+	return ret;
 }

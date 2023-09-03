@@ -1,7 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Copyright 2018 NXP
+ * Copyright 2018, 2021 NXP
  *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
@@ -18,7 +18,7 @@
 #include <dm/lists.h>
 #include <asm/io.h>
 #include <asm/gpio.h>
-#include <asm/arch/sci/sci.h>
+#include <firmware/imx/sci/sci.h>
 #include <asm/arch/imx8-pins.h>
 #include <asm/arch/iomux.h>
 #include <asm/arch/sys_proto.h>
@@ -38,6 +38,8 @@ static iomux_cfg_t usdhc2_sd_pwr[] = {
 void spl_board_init(void)
 {
 	struct udevice *dev;
+
+	uclass_get_device_by_driver(UCLASS_MISC, DM_DRIVER_GET(imx8_scu), &dev);
 
 	uclass_find_first_device(UCLASS_MISC, &dev);
 

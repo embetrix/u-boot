@@ -11,6 +11,7 @@
 #include <asm/unaligned.h>
 #include <linux/string.h>
 #include <tpm-common.h>
+#include <tpm_api.h>
 #include "tpm-user-utils.h"
 
 static struct udevice *tpm_dev;
@@ -46,7 +47,7 @@ void print_byte_string(u8 *data, size_t count)
  *			NULL is passed, a large enough buffer will be allocated,
  *			and the caller must free it.
  * @param count_ptr	output variable for the length of byte string
- * @return pointer to output buffer
+ * Return: pointer to output buffer
  */
 void *parse_byte_string(char *bytes, u8 *data, size_t *count_ptr)
 {
@@ -81,7 +82,7 @@ void *parse_byte_string(char *bytes, u8 *data, size_t *count_ptr)
  * report_return_code() - Report any error and return failure or success
  *
  * @param return_code	TPM command return code
- * @return value of enum command_ret_t
+ * Return: value of enum command_ret_t
  */
 int report_return_code(int return_code)
 {
@@ -97,7 +98,7 @@ int report_return_code(int return_code)
  * Return number of values defined by a type string.
  *
  * @param type_str	type string
- * @return number of values of type string
+ * Return: number of values of type string
  */
 int type_string_get_num_values(const char *type_str)
 {
@@ -108,7 +109,7 @@ int type_string_get_num_values(const char *type_str)
  * Return total size of values defined by a type string.
  *
  * @param type_str	type string
- * @return total size of values of type string, or 0 if type string
+ * Return: total size of values of type string, or 0 if type string
  *  contains illegal type character.
  */
 size_t type_string_get_space_size(const char *type_str)
@@ -140,7 +141,7 @@ size_t type_string_get_space_size(const char *type_str)
  *
  * @param type_str	type string
  * @param count		pointer for storing size of buffer
- * @return pointer to buffer or NULL on error
+ * Return: pointer to buffer or NULL on error
  */
 void *type_string_alloc(const char *type_str, u32 *count)
 {
@@ -164,7 +165,7 @@ void *type_string_alloc(const char *type_str, u32 *count)
  * @param type_str	type string
  * @param values	text strings of values to be packed
  * @param data		output buffer of values
- * @return 0 on success, non-0 on error
+ * Return: 0 on success, non-0 on error
  */
 int type_string_pack(const char *type_str, char * const values[],
 		     u8 *data)
@@ -202,7 +203,7 @@ int type_string_pack(const char *type_str, char * const values[],
  * @param type_str	type string
  * @param data		input buffer of values
  * @param vars		names of environment variables
- * @return 0 on success, non-0 on error
+ * Return: 0 on success, non-0 on error
  */
 int type_string_write_vars(const char *type_str, u8 *data,
 			   char * const vars[])
@@ -333,6 +334,26 @@ int do_tpm_info(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 	return 0;
 }
 
+int do_tpm_report_state(struct cmd_tbl *cmdtp, int flag, int argc,
+			char *const argv[])
+{
+	struct udevice *dev;
+	char buf[80];
+	int rc;
+
+	rc = get_tpm(&dev);
+	if (rc)
+		return rc;
+	rc = tpm_report_state(dev, buf, sizeof(buf));
+	if (rc < 0) {
+		printf("Couldn't get TPM state (%d)\n", rc);
+		return CMD_RET_FAILURE;
+	}
+	printf("%s\n", buf);
+
+	return 0;
+}
+
 int do_tpm_init(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 {
 	struct udevice *dev;
@@ -345,6 +366,21 @@ int do_tpm_init(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 		return rc;
 
 	return report_return_code(tpm_init(dev));
+}
+
+int do_tpm_autostart(struct cmd_tbl *cmdtp, int flag, int argc,
+		     char *const argv[])
+{
+	struct udevice *dev;
+	int rc;
+
+	if (argc != 1)
+		return CMD_RET_USAGE;
+	rc = get_tpm(&dev);
+	if (rc)
+		return rc;
+
+	return report_return_code(tpm_auto_start(dev));
 }
 
 int do_tpm(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
