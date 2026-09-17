@@ -16,6 +16,7 @@ General
    docstyle
    kconfig
    memory
+   mldsa
    process
    release_cycle
    security
