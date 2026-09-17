@@ -75,6 +75,15 @@ config UT_LIB_RSA
 	  Enables rsa_verify() test, currently rsa_verify_with_pkey only()
 	  only, at the 'ut lib' command.
 
+config UT_LIB_MLDSA
+	bool "Unit tests for ML-DSA verification"
+	default y
+	select MLDSA_VERIFY
+	help
+	  Enables fixed-vector tests for all three FIPS 204 ML-DSA parameter
+	  sets. Tests cover malformed encodings, input mutations and the
+	  complete UseHint input space at the 'ut lib' command.
+
 endif  # UT_LIB
 
 config UT_BOOTSTD
