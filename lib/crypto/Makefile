@@ -60,6 +60,9 @@ $(obj)/pkcs7.asn1.o: $(obj)/pkcs7.asn1.c $(obj)/pkcs7.asn1.h
 
 obj-$(CONFIG_$(PHASE_)PKCS7_VERIFY) += pkcs7_verify.o
 
+obj-$(CONFIG_$(PHASE_)SHAKE) += sha3.o
+obj-$(CONFIG_$(PHASE_)MLDSA_VERIFY) += mldsa.o
+
 #
 # Signed PE binary-wrapped key handling
 #

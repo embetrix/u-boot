@@ -568,6 +568,12 @@ endmenu
 
 menu "Hashing Support"
 
+config SHAKE
+	bool "Enable SHAKE128/SHAKE256 support"
+	help
+	  Enable the FIPS 202 SHAKE128 and SHAKE256 extendable-output
+	  functions. Both one-shot and incremental interfaces are provided.
+
 config BLAKE2
 	bool "Enable BLAKE2 support"
 	help
@@ -617,6 +623,14 @@ config SM3
 	  This option enables support of hashing using
 	  SM3 (ShangMi 3) secure hash function (OSCCA GM/T 0004-2012, ISO/IEC 10118-3)
 	  The hash is calculated in software.
+
+config MLDSA_VERIFY
+	bool "Enable ML-DSA signature verification"
+	select SHAKE
+	help
+	  Enable verification of pure FIPS 204 ML-DSA-44, ML-DSA-65 and
+	  ML-DSA-87 signatures using raw public keys and signatures. This
+	  option does not include signing, private-key handling or FIT support.
 
 config SHA_HW_ACCEL
 	bool "Enable hardware acceleration for SHA hash functions"
