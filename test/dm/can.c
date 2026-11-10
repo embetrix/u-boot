@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 #include <can.h>
+#include <command.h>
 #include <dm.h>
 #include <generic-phy.h>
 #include <asm/gpio.h>
@@ -89,6 +90,42 @@ static int dm_test_can_timing(struct unit_test_state *uts)
 }
 
 DM_TEST(dm_test_can_timing, 0);
+
+static int dm_test_can_command(struct unit_test_state *uts)
+{
+	struct udevice *dev;
+	struct can_frame frame;
+
+	if (!CONFIG_IS_ENABLED(CMD_CAN))
+		return -EAGAIN;
+
+	ut_assertok(uclass_get_device_by_name(UCLASS_CAN, "can-test", &dev));
+	ut_assertok(run_command("can start 0 500000 loopback", 0));
+	ut_assertok(run_command("can send 0 eff 1fffffff 0080ff123456789a", 0));
+	ut_assertok(can_recv(dev, &frame));
+	ut_asserteq(CAN_EFF_MASK, frame.id);
+	ut_asserteq(CAN_FRAME_EFF, frame.flags);
+	ut_asserteq(8, frame.len);
+	ut_asserteq(0x80, frame.data[1]);
+	ut_asserteq(0x9a, frame.data[7]);
+	ut_assertok(run_command("can send 0 sff 000 -", 0));
+	ut_assertok(can_recv(dev, &frame));
+	ut_asserteq(0, frame.id);
+	ut_asserteq(0, frame.len);
+	ut_assertok(run_command("can rtr 0 sff 7ff 8", 0));
+	ut_assertok(can_recv(dev, &frame));
+	ut_asserteq(CAN_FRAME_RTR, frame.flags);
+	ut_asserteq(8, frame.len);
+	ut_asserteq(1, run_command("can send 0 sff 800 00", 0));
+	ut_assert_nextline("CAN send failed: -22");
+	ut_asserteq(1, run_command("can send 0 sff 123 xyz", 0));
+	ut_assert_nextline("CAN send failed: -22");
+	ut_assertok(run_command("can stop 0", 0));
+	ut_assert_console_end();
+	return 0;
+}
+
+DM_TEST(dm_test_can_command, UTF_SCAN_FDT | UTF_CONSOLE);
 
 static int dm_test_can_phy(struct unit_test_state *uts)
 {
