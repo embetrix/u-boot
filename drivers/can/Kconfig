@@ -7,6 +7,13 @@ menuconfig CAN
 
 if CAN
 
+config CAN_FLEXCAN
+	bool "NXP i.MX95 FlexCAN"
+	depends on IMX95 && CLK && PHY
+	help
+	  Polled Classical CAN support for i.MX95 FlexCAN controllers.
+	  Supports raw data and RTR frames with standard or extended identifiers.
+
 config CAN_SANDBOX
 	bool "Sandbox CAN controller"
 	depends on SANDBOX
