@@ -1,0 +1,18 @@
+menuconfig CAN
+	bool "Controller Area Network support"
+	depends on DM
+	help
+	  Driver-model support for raw Classical CAN frames. This does not
+	  provide SocketCAN sockets or higher-level CAN protocols.
+
+if CAN
+
+config CAN_SANDBOX
+	bool "Sandbox CAN controller"
+	depends on SANDBOX
+	default y
+	help
+	  In-memory CAN controller for testing the CAN API and command.
+	  Models internal loopback and a bus without an acknowledging peer.
+
+endif

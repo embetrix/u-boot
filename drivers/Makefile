@@ -91,6 +91,7 @@ obj-y += ata/
 obj-$(CONFIG_DM_DEMO) += demo/
 obj-y += block/
 obj-y += cache/
+obj-$(CONFIG_CAN) += can/
 obj-$(CONFIG_CPU) += cpu/
 obj-y += crypto/
 obj-$(CONFIG_FASTBOOT) += fastboot/

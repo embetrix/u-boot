@@ -24,6 +24,17 @@
 	#address-cells = <1>;
 	#size-cells = <1>;
 
+	can-test {
+		compatible = "sandbox,can";
+		phys = <&can_test_phy>;
+	};
+
+	can_test_phy: can-phy-test {
+		compatible = "nxp,tja1051";
+		#phy-cells = <0>;
+		silent-gpios = <&gpio_a 6 GPIO_ACTIVE_HIGH>;
+	};
+
 	aliases {
 		console = &uart0;
 		ethernet0 = "/eth@10002000";

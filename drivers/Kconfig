@@ -22,6 +22,8 @@ source "drivers/button/Kconfig"
 
 source "drivers/cache/Kconfig"
 
+source "drivers/can/Kconfig"
+
 source "drivers/clk/Kconfig"
 
 source "drivers/cpu/Kconfig"

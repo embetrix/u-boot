@@ -32,6 +32,7 @@ obj-$(CONFIG_ADC) += adc.o
 obj-$(CONFIG_AES_SOFTWARE) += aes.o
 obj-$(CONFIG_SOUND) += audio.o
 obj-$(CONFIG_AXI) += axi.o
+obj-$(CONFIG_CAN_SANDBOX) += can.o
 obj-$(CONFIG_BLK) += blk.o
 obj-$(CONFIG_BLKMAP) += blkmap.o
 obj-$(CONFIG_BUTTON) += button.o
