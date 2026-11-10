@@ -11,6 +11,7 @@ subsystems
    :maxdepth: 2
 
    bind
+   can
    debugging
    design
    ethernet
