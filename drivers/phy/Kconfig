@@ -42,6 +42,14 @@ config PHY_SANDBOX
 	  This select a dummy sandbox PHY driver. It used only to implement
 	  the unit tests for the phy framework
 
+config PHY_CAN_TRANSCEIVER
+	bool "GPIO-controlled CAN transceiver"
+	depends on PHY && DM_GPIO
+	help
+	  Support the NXP TJA1051 CAN transceiver's silent GPIO using the
+	  standard CAN transceiver PHY binding. Consumers of the same PHY
+	  node share power control through the PHY core's reference count.
+
 config NOP_PHY
 	bool "NOP PHY driver"
 	depends on PHY
